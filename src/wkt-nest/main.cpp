@@ -34,7 +34,6 @@ int main(int argc, char *argv[])
     po::options_description generic_params("Generic options");
     generic_params.add_options()
       ("version,v", "Print version string")
-      ("about,a", "About this application")
       ("help,h", "Print help");
 
     //

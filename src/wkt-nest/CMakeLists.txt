@@ -1,4 +1,4 @@
-set(NAME myproject)
+set(NAME wkt-nest)
 
 # Build steps
 file(GLOB_RECURSE HDR_FILES ${CMAKE_SOURCE_DIR}/include/${NAME}/*.hpp)
