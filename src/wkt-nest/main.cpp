@@ -4,7 +4,6 @@
 namespace po = boost::program_options;
 
 #include "../version_autogen.hpp"
-#include "mylib/myfunc.hpp"
 
 using namespace std;
 
@@ -69,7 +68,7 @@ int main(int argc, char *argv[])
 
     if (true)
     {
-        cout << "hello from " << mylib::my_name() << endl;
+        cout << "hello from wkt-nest" << endl;
     }
     else
     {
