@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <string>
 #include <iostream>
 #include <boost/program_options.hpp>
@@ -5,9 +6,11 @@ namespace po = boost::program_options;
 
 #include "../version_autogen.hpp"
 
-using namespace std;
+#include "wkt-nest/wktio.hpp"
 
-inline void showHelp(const po::options_description &cmdline_options, std::ostream &stream = cout)
+using namespace wktnest;
+
+inline void showHelp(const po::options_description &cmdline_options, std::ostream &stream = std::cout)
 {
     stream << cmdline_options << "\n";
 }
@@ -24,7 +27,7 @@ int main(int argc, char *argv[])
 
     po::options_description positional_params;
     positional_params.add_options()
-      ("input-file", po::value<string>(), "Optional input file (can also be provided through stdin)");
+      ("input-file", po::value<std::string>(), "Optional input file (can also be provided through stdin)");
 
 
     //
@@ -46,20 +49,20 @@ int main(int argc, char *argv[])
     po::notify(vm);
 
     // Process the generic options
-    bool exit = false;
+    bool do_exit = false;
     if (vm.count("version")) {
-      cout << MAJOR_VERSION << '.'
-           << MINOR_VERSION << '.'
-           << REVISION << '.'
-           << BUILD_NUMBER << '\n'
-           << COMMIT_HASH << '\n';
-      exit = true;
+      std::cout << MAJOR_VERSION << '.'
+                << MINOR_VERSION << '.'
+                << REVISION << '.'
+                << BUILD_NUMBER << '\n'
+                << COMMIT_HASH << '\n';
+      do_exit = true;
     }
     if (vm.count("help")) {
       showHelp(cmdline_options);
-      exit = true;
+      do_exit = true;
     }
-    if (exit) return 0;
+    if (do_exit) exit(EXIT_SUCCESS);
 
 
     //
@@ -68,18 +71,39 @@ int main(int argc, char *argv[])
 
     if (true)
     {
-        cout << "hello from wkt-nest" << endl;
+      std::optional<box> b = read_box(std::cin);
+      if (!b) {
+        std::cerr << "No bin box provided" << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      std::vector<polygon> ps = read_polygons(std::cin);
+
+      // Declare a stream and an SVG mapper
+      boost::geometry::svg_mapper<point_type> mapper(std::cout, 400, 400);
+
+      // Add geometries such that all these geometries fit on the map
+      mapper.add(*b);
+      for (auto p : ps)
+        mapper.add(p);
+
+      mapper.map(*b, "fill-opacity:0.5;fill:rgb(153,204,0);stroke:rgb(153,204,0);stroke-width:2", 5);
+      for (auto p : ps)
+        // Draw the geometries on the SVG map, using a specific SVG style
+        mapper.map(p, "fill-opacity:0.3;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:2");
+
+      // Destructor of map will be called - adding </svg>
+      // Destructor of stream will be called, closing the file
     }
     else
     {
-      showHelp(cmdline_options, cerr);
+      showHelp(cmdline_options, std::cerr);
     }
 
-    return 0;
+    exit(EXIT_SUCCESS);
   }
   catch (std::exception &ex)
   {
-    cerr << ex.what() << endl;
-    return 1;
+    std::cerr << ex.what() << std::endl;
+    exit(EXIT_FAILURE);
   }
 }
