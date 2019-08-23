@@ -6,7 +6,9 @@ namespace po = boost::program_options;
 
 #include "../version_autogen.hpp"
 
+#include <boost/geometry/io/svg/svg_mapper.hpp>
 #include "wkt-nest/wktio.hpp"
+#include "wkt-nest/bbpack.hpp"
 
 using namespace wktnest;
 
@@ -71,15 +73,18 @@ int main(int argc, char *argv[])
 
     if (true)
     {
-      std::optional<box> b = read_box(std::cin);
+      std::optional<box_t> b = read_box(std::cin);
       if (!b) {
         std::cerr << "No bin box provided" << std::endl;
         exit(EXIT_FAILURE);
       }
-      std::vector<polygon> ps = read_polygons(std::cin);
+      std::vector<polygon_t> ps = read_polygons(std::cin);
+
+      auto state = bbpack::init(*b);
+      std::vector<box_t> fit = bbpack::fit(state, ps);
 
       // Declare a stream and an SVG mapper
-      boost::geometry::svg_mapper<point_type> mapper(std::cout, 400, 400);
+      boost::geometry::svg_mapper<point_t> mapper(std::cout, 400, 400);
 
       // Add geometries such that all these geometries fit on the map
       mapper.add(*b);
@@ -87,7 +92,8 @@ int main(int argc, char *argv[])
         mapper.add(p);
 
       mapper.map(*b, "fill-opacity:0.5;fill:rgb(153,204,0);stroke:rgb(153,204,0);stroke-width:2", 5);
-      for (auto p : ps)
+      //for (auto p : ps)
+      for (auto p : fit)
         // Draw the geometries on the SVG map, using a specific SVG style
         mapper.map(p, "fill-opacity:0.3;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:2");
 

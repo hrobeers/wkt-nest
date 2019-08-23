@@ -1,6 +1,7 @@
 #include "wkt-nest/wktio.hpp"
 
 #include <sstream>
+#include <boost/geometry/io/wkt/read.hpp>
 
 using namespace wktnest;
 
@@ -40,20 +41,20 @@ namespace {
   }
 }
 
-std::optional<box> wktnest::read_box(std::istream &in) {
+std::optional<box_t> wktnest::read_box(std::istream &in) {
   if (auto s = read_token(BOX, in)) {
-    box b;
+    box_t b;
     boost::geometry::read_wkt(*s, b);
     return b;
   }
-  return std::optional<box>();
+  return std::optional<box_t>();
 }
 
-std::optional<polygon> wktnest::read_polygon(std::istream &in) {
+std::optional<polygon_t> wktnest::read_polygon(std::istream &in) {
   if (auto s = read_token(POLYGON, in)) {
-    polygon p;
+    polygon_t p;
     boost::geometry::read_wkt(*s, p);
     return p;
   }
-  return std::optional<polygon>();
+  return std::optional<polygon_t>();
 }
