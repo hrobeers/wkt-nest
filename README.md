@@ -1,5 +1,7 @@
-CMake Template project
-==========================
+WKT-nest
+========
 
-Simple C++ Cmake Template Project using boost::program_options and git based build numbers.
+WORK IN PROGRESS!
+
+2D bin-packing and nesting tool, reading OGC Well-Known Text polygons from file or stdin.
 
