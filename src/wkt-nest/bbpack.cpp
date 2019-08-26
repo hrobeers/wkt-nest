@@ -65,14 +65,15 @@ void item_t::absolute_transform(const matrix_t& t) {
 }
 
 
-state_t bbpack::init(const box_t& bin) {
-  return { bin };
-}
-
 std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygons) {
 
   for (const polygon_t& p : polygons)
     s.items.push_back(item_t(&p));
+
+  if (s.sorting == SORTING::HEIGHT)
+    std::sort(s.items.begin(), s.items.end(), [](const item_t& i1, const item_t& i2){
+                                                return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
+                                              });
 
   // construct root
   s.nodes.push_back({s.bin});

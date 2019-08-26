@@ -10,6 +10,12 @@
 #include "wkt-nest/geometry.hpp"
 
 namespace wktnest {
+  // TODO move to own header when reused elsewhere
+  enum SORTING { NONE, HEIGHT };
+  struct nesting_opts {
+    SORTING sorting = NONE;
+  };
+
   namespace bbpack {
     class item_t {
       static std::set<const polygon_t*> s_placed;
@@ -40,6 +46,7 @@ namespace wktnest {
     };
     struct state_t {
       box_t bin;
+      SORTING sorting;
       std::vector<item_t> items;
       std::map<const polygon_t*, const item_t*> fits;
       std::map<const item_t*, size_t> item_to_bin_idx;
@@ -52,7 +59,11 @@ namespace wktnest {
       std::vector<node_t> nodes;
     };
 
-    state_t init(const box_t& bin);
+    template<typename T_opts>
+    state_t init(const box_t& bin, const T_opts& opts) {
+      return { bin, opts.sorting };
+    }
+
     std::vector<matrix_t> fit(state_t& s, const std::vector<polygon_t>& polygons);
     node_t* find_node(state_t& s, node_t* root, item_t* item);
     node_t* split_node(state_t& s, node_t* n, item_t* item);

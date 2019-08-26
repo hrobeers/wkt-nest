@@ -22,6 +22,16 @@ int main(int argc, char *argv[])
   try
   {
     //
+    // WKT-nest options
+    //
+    po::options_description nesting_params("Nesting options");
+    nesting_params.add_options()
+      ("sort,s", po::value<std::string>(),
+       "Sorting strategy before packing. Defaults to 'none'.\n"
+       "['none', 'height']");
+
+
+    //
     // Positional options
     //
     po::positional_options_description positional_options;
@@ -40,11 +50,12 @@ int main(int argc, char *argv[])
       ("version,v", "Print version string")
       ("help,h", "Print help");
 
+
     //
     // Process the actual command line arguments given by the user
     //
     po::options_description cmdline_options;
-    cmdline_options.add(positional_params).add(generic_params);
+    cmdline_options.add(positional_params).add(nesting_params).add(generic_params);
 
     po::variables_map vm;
     po::store(po::command_line_parser(argc, argv).options(cmdline_options).positional(positional_options).run(), vm);
@@ -67,6 +78,11 @@ int main(int argc, char *argv[])
     if (do_exit) exit(EXIT_SUCCESS);
 
 
+    // Read the cmd arguments to options struct
+    nesting_opts opts;
+    opts.sorting = vm.count("sort") &&
+      vm["sort"].as<std::string>()=="height"? SORTING::HEIGHT : SORTING::NONE;
+
     //
     // Run the application
     //
@@ -80,7 +96,7 @@ int main(int argc, char *argv[])
       }
       std::vector<polygon_t> ps = read_polygons(std::cin);
 
-      auto state = bbpack::init(*b);
+      auto state = bbpack::init(*b, opts);
       std::vector<matrix_t> fit = bbpack::fit(state, ps);
 
       // Declare a stream and an SVG mapper
