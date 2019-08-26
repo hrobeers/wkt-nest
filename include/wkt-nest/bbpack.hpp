@@ -14,6 +14,7 @@ namespace wktnest {
     class item_t {
       static std::set<const polygon_t*> s_placed;
       const polygon_t* _source;
+      matrix_t _init_transform;
 
       polygon_t _polygon;
       box_t _bbox;
@@ -22,6 +23,7 @@ namespace wktnest {
     public:
       item_t(const polygon_t* p);
 
+      const polygon_t* source() const { return _source; }
       const polygon_t* polygon() const { return &_polygon; }
       const box_t* bbox() const { return &_bbox; }
       const matrix_t* transform() const { return &_transform; }
@@ -39,6 +41,7 @@ namespace wktnest {
     struct state_t {
       box_t bin;
       std::vector<item_t> items;
+      std::map<const polygon_t*, const item_t*> fits;
       std::map<const item_t*, size_t> item_to_bin_idx;
 
       // TODO below still needed?
@@ -47,12 +50,10 @@ namespace wktnest {
       //std::vector<std::vector<node_t>> nodes;
       // single bin of nodes TODO switch to multiple bins
       std::vector<node_t> nodes;
-      // fit per bbox
-      std::map<const item_t*,node_t*> fits;
     };
 
     state_t init(const box_t& bin);
-    std::vector<box_t> fit(state_t& s, const std::vector<polygon_t>& polygons);
+    std::vector<matrix_t> fit(state_t& s, const std::vector<polygon_t>& polygons);
     node_t* find_node(state_t& s, node_t* root, item_t* item);
     node_t* split_node(state_t& s, node_t* n, item_t* item);
   }

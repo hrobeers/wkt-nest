@@ -12,6 +12,6 @@
 #define REVISION 1
 
 #define BUILD_NUMBER 24
-#define COMMIT_HASH "8e4d9071a4b7ed5cf967804a9c83f7b82fa54703"
+#define COMMIT_HASH "32b3ab1603ac7cdbb0d0a13e1d1ebfb7219abd57"
 
 #endif // VERSION_AUTOGEN_H

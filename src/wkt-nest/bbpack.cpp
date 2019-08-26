@@ -44,7 +44,9 @@ namespace {
 
 bbpack::item_t::item_t(const polygon_t* p) {
   _source = p;
-  // TODO transform to origin
+  bg::envelope(*_source,_bbox);
+  // initial transform = move to origin TODO extend with optimal rotation
+  _init_transform = translation(-_bbox.min_corner().x(), -_bbox.min_corner().y());
   absolute_transform(identity_matrix(3));
 }
 
@@ -57,9 +59,8 @@ void item_t::relative_transform(const matrix_t& t) {
 }
 
 void item_t::absolute_transform(const matrix_t& t) {
-  bg::envelope(*_source,_bbox);
-  _transform = translation(-_bbox.min_corner().x(), -_bbox.min_corner().y());
-  // TODO move to origin with transform
+  // reset to initial transform
+  _transform = _init_transform;
   relative_transform(t);
 }
 
@@ -68,7 +69,7 @@ state_t bbpack::init(const box_t& bin) {
   return { bin };
 }
 
-std::vector<box_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygons) {
+std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygons) {
 
   for (const polygon_t& p : polygons)
     s.items.push_back(item_t(&p));
@@ -79,17 +80,18 @@ std::vector<box_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygon
 
   for (item_t& item : s.items)
     if (auto node = find_node(s, root, &item)) // TODO else pack in other bin
-      s.fits[&item] = split_node(s, node, &item);
+      if (split_node(s, node, &item))
+        s.fits[item.source()] = &item;
 
-  // Create fitted box vector
-  std::vector<box_t> fboxes;
-  fboxes.resize(s.items.size());
-  std::transform(s.items.cbegin(), s.items.cend(), fboxes.begin(),
-                 [&s](const item_t& item) -> box_t {
-                   return *item.bbox();
+  // Create the transformations vector
+  std::vector<matrix_t> transformations;
+  transformations.resize(s.items.size());
+  std::transform(polygons.cbegin(), polygons.cend(), transformations.begin(),
+                 [&s](const polygon_t& p) -> matrix_t {
+                   return *(s.fits[&p]->transform());
                  });
 
-  return fboxes;
+  return transformations;
 }
 
 node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item) {
@@ -113,7 +115,6 @@ node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item) {
 
 node_t* bbpack::split_node(state_t& s, node_t* n, item_t* item) {
 
-  s.fits[item] = n;
   n->used = true;
 
   double n_min_x = bg::get<bg::min_corner, 0>(n->box);

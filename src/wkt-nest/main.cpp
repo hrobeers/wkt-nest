@@ -81,26 +81,23 @@ int main(int argc, char *argv[])
       std::vector<polygon_t> ps = read_polygons(std::cin);
 
       auto state = bbpack::init(*b);
-      std::vector<box_t> fit = bbpack::fit(state, ps);
+      std::vector<matrix_t> fit = bbpack::fit(state, ps);
 
       // Declare a stream and an SVG mapper
       boost::geometry::svg_mapper<point_t> mapper(std::cout, 400, 400);
 
       // Add geometries such that all these geometries fit on the map
       mapper.add(*b);
-      for (auto bb : fit)
-        mapper.add(bb);
       for (auto item : state.items)
-        mapper.add(*item.polygon());
+        mapper.add(*item.bbox());
 
       mapper.map(*b, "fill-opacity:0.5;fill:rgb(153,204,0);stroke:rgb(153,204,0);stroke-width:2", 5);
       //for (auto p : ps)
-      for (auto bb : fit)
+      for (auto item : state.items) {
         // Draw the geometries on the SVG map, using a specific SVG style
-        mapper.map(bb, "fill-opacity:0.3;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:2");
-      for (auto item : state.items)
-        // Draw the geometries on the SVG map, using a specific SVG style
+        mapper.map(*item.bbox(), "fill-opacity:0.3;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:2");
         mapper.map(*item.polygon(), "fill-opacity:0.3;fill:rgb(212,0,0);stroke:rgb(212,0,0);stroke-width:2");
+      }
 
       // Destructor of map will be called - adding </svg>
       // Destructor of stream will be called, closing the file
