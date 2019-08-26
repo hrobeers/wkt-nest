@@ -11,24 +11,24 @@
 
 namespace wktnest {
   namespace bbpack {
-    struct transform_t { /* TODO */ };
     class item_t {
       static std::set<const polygon_t*> s_placed;
       const polygon_t* _source;
 
       polygon_t _polygon;
       box_t _bbox;
-      transform_t _transform;
+      matrix_t _transform;
 
     public:
-      item_t(const polygon_t& p);
+      item_t(const polygon_t* p);
 
       const polygon_t* polygon() const { return &_polygon; }
       const box_t* bbox() const { return &_bbox; }
-      const transform_t* transform() const { return &_transform; }
+      const matrix_t* transform() const { return &_transform; }
       bool placed() const { return s_placed.count(_source); }
 
-      void apply_transform(transform_t &t) { /* TODO */ }
+      void relative_transform(const matrix_t& t);
+      void absolute_transform(const matrix_t& t);
     };
     struct node_t {
       box_t box;

@@ -88,14 +88,19 @@ int main(int argc, char *argv[])
 
       // Add geometries such that all these geometries fit on the map
       mapper.add(*b);
-      for (auto p : ps)
-        mapper.add(p);
+      for (auto bb : fit)
+        mapper.add(bb);
+      for (auto item : state.items)
+        mapper.add(*item.polygon());
 
       mapper.map(*b, "fill-opacity:0.5;fill:rgb(153,204,0);stroke:rgb(153,204,0);stroke-width:2", 5);
       //for (auto p : ps)
-      for (auto p : fit)
+      for (auto bb : fit)
         // Draw the geometries on the SVG map, using a specific SVG style
-        mapper.map(p, "fill-opacity:0.3;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:2");
+        mapper.map(bb, "fill-opacity:0.3;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:2");
+      for (auto item : state.items)
+        // Draw the geometries on the SVG map, using a specific SVG style
+        mapper.map(*item.polygon(), "fill-opacity:0.3;fill:rgb(212,0,0);stroke:rgb(212,0,0);stroke-width:2");
 
       // Destructor of map will be called - adding </svg>
       // Destructor of stream will be called, closing the file

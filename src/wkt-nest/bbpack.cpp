@@ -22,15 +22,45 @@ namespace {
     double max_y = bg::get<bg::max_corner, 1>(*b);
     return { max_x-min_x, max_y-min_y };
   }
+  polygon_t transform(const polygon_t& p, const matrix_t& t) {
+    polygon_t result = p;
+    bg::for_each_point(result, [&t](point_t& p) {
+                                 vector_t vec({p.x(),p.y(),1});
+                                 vector_t r = ublas::prod(t, vec);
+                                 bg::set<0>(p, r(0));
+                                 bg::set<1>(p, r(1));
+                               });
+    return result;
+  }
+  matrix_t translation(double x, double y) {
+    array_t a ({1,0,x,
+                0,1,y,
+                0,0,1});
+    return matrix_t(3,3,std::move(a));
+  }
+  matrix_t translation(point_t p) { return translation(p.x(), p.y()); }
 }
 
 
-bbpack::item_t::item_t(const polygon_t& p) {
-  _source = &p;
-  // TODO apply transform identity instead of code below
+bbpack::item_t::item_t(const polygon_t* p) {
+  _source = p;
   // TODO transform to origin
-  _polygon = p;
+  absolute_transform(identity_matrix(3));
+}
+
+void item_t::relative_transform(const matrix_t& t) {
+  _transform = ublas::prod(_transform,t);
+
+  // Apply transformation to source polygon
+  _polygon = ::transform(*_source, _transform);
   bg::envelope(_polygon,_bbox);
+}
+
+void item_t::absolute_transform(const matrix_t& t) {
+  bg::envelope(*_source,_bbox);
+  _transform = translation(-_bbox.min_corner().x(), -_bbox.min_corner().y());
+  // TODO move to origin with transform
+  relative_transform(t);
 }
 
 
@@ -40,8 +70,8 @@ state_t bbpack::init(const box_t& bin) {
 
 std::vector<box_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygons) {
 
-  for (auto p : polygons)
-    s.items.push_back(item_t(p));
+  for (const polygon_t& p : polygons)
+    s.items.push_back(item_t(&p));
 
   // construct root
   s.nodes.push_back({s.bin});
@@ -56,14 +86,7 @@ std::vector<box_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygon
   fboxes.resize(s.items.size());
   std::transform(s.items.cbegin(), s.items.cend(), fboxes.begin(),
                  [&s](const item_t& item) -> box_t {
-                   // TODO filter first on fit
-                   node_t* n = s.fits[&item];
-                   //if (!n) return box_t();
-                   point_t min = item.bbox()->min_corner();
-                   point_t max = item.bbox()->max_corner();
-                   bg::add_point(min, n->box.min_corner());
-                   bg::add_point(max, n->box.min_corner());
-                   return box_t(min, max);
+                   return *item.bbox();
                  });
 
   return fboxes;
@@ -97,6 +120,8 @@ node_t* bbpack::split_node(state_t& s, node_t* n, item_t* item) {
   double n_min_y = bg::get<bg::min_corner, 1>(n->box);
   double n_max_x = bg::get<bg::max_corner, 0>(n->box);
   double n_max_y = bg::get<bg::max_corner, 1>(n->box);
+
+  item->absolute_transform(translation(n_min_x, n_min_y));
 
   auto bbdims = dims(item->bbox());
 
