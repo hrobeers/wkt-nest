@@ -26,6 +26,8 @@ int main(int argc, char *argv[])
     //
     po::options_description nesting_params("Nesting options");
     nesting_params.add_options()
+      ("bbox,b",
+       "Nest the polygon's bounding boxes instead of the polygon itself.")
       ("sort,s", po::value<std::string>(),
        "Sorting strategy before packing. Defaults to 'none'.\n"
        "['none', 'height']");
@@ -80,6 +82,7 @@ int main(int argc, char *argv[])
 
     // Read the cmd arguments to options struct
     nesting_opts opts;
+    opts.bbox = vm.count("bbox");
     opts.sorting = vm.count("sort") &&
       vm["sort"].as<std::string>()=="height"? SORTING::HEIGHT : SORTING::NONE;
 

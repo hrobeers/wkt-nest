@@ -4,13 +4,22 @@
 #include <boost/geometry/algorithms/envelope.hpp>
 #include <boost/geometry/arithmetic/arithmetic.hpp>
 #include <boost/geometry/algorithms/for_each.hpp>
-
+#include <boost/geometry/algorithms/overlaps.hpp>
+#include <boost/geometry/algorithms/within.hpp>
 namespace bg = boost::geometry;
+
+#include <boost/math/tools/roots.hpp>
+namespace roots = boost::math::tools;
+typedef boost::math::policies::policy<boost::math::policies::evaluation_error<boost::math::policies::ignore_error>> ignore_eval_err;
+
 
 using namespace wktnest;
 using namespace bbpack;
 
 namespace {
+  const boost::uintmax_t MAX_IT = 10;
+  const std::function<bool(double,double)> stop_condition = [](double a, double b){return false;};
+
   struct dim_t {
     double w;
     double h;
@@ -39,6 +48,14 @@ namespace {
     return matrix_t(3,3,std::move(a));
   }
   matrix_t translation(point_t p) { return translation(p.x(), p.y()); }
+  template<typename Geometry>
+  bool overlaps(const Geometry& g1, const Geometry& g2) {
+    return bg::overlaps(g1, g2) || bg::within(g1, g2);
+  }
+  template<>
+  bool overlaps<item_t>(const item_t& i1, const item_t& i2) {
+    return overlaps(*i1.bbox(), *i2.bbox()) && overlaps(*i1.polygon(), *i2.polygon());
+  }
 }
 
 
@@ -67,6 +84,7 @@ void item_t::absolute_transform(const matrix_t& t) {
 
 std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygons) {
 
+  s.items.reserve(polygons.size());
   for (const polygon_t& p : polygons)
     s.items.push_back(item_t(&p));
 
@@ -89,53 +107,101 @@ std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& poly
   transformations.resize(s.items.size());
   std::transform(polygons.cbegin(), polygons.cend(), transformations.begin(),
                  [&s](const polygon_t& p) -> matrix_t {
+                   if (!s.fits[&p])
+                     return identity_matrix(3);
                    return *(s.fits[&p]->transform());
                  });
 
   return transformations;
 }
 
-node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item) {
+node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
 
+  if (rec_depth>255)
+    return nullptr;
   if (root->used) {
     node_t* up = root->up;
     node_t* right = root->right;
-    if (auto node = find_node(s, right, item))
-      return node;
-    return find_node(s, up, item);
+    if (right)
+      if (node_t* node = find_node(s, right, item, ++rec_depth))
+        return node;
+    if (up)
+      if (node_t* node = find_node(s, up, item, ++rec_depth))
+        return node;
+    return nullptr;
   }
 
   auto rtdims = dims(&root->box);
   auto bbdims = dims(item->bbox());
-
   if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h))
     return root;
 
   return nullptr;
 }
 
-node_t* bbpack::split_node(state_t& s, node_t* n, item_t* item) {
+node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
-  n->used = true;
+  double n_min_x = bg::get<bg::min_corner, 0>(node->box);
+  double n_min_y = bg::get<bg::min_corner, 1>(node->box);
+  double n_max_x = bg::get<bg::max_corner, 0>(node->box);
+  double n_max_y = bg::get<bg::max_corner, 1>(node->box);
 
-  double n_min_x = bg::get<bg::min_corner, 0>(n->box);
-  double n_min_y = bg::get<bg::min_corner, 1>(n->box);
-  double n_max_x = bg::get<bg::max_corner, 0>(n->box);
-  double n_max_y = bg::get<bg::max_corner, 1>(n->box);
 
-  item->absolute_transform(translation(n_min_x, n_min_y));
+  if (s.compact) {
+    // Move to left until collision
+    auto f_collision = [&](double perc) -> int {
+                         double x = perc * n_min_x;
+                         item->absolute_transform(translation(x, n_min_y));
+                         // TODO won't work for multiple items referencing same source
+                         for (const item_t& i : s.items) {
+                           if (!i.placed())
+                             continue;
+                           if (overlaps(*item, i))
+                             return -1;
+                         }
+                         for (const node_t& n : s.nodes) {
+                           if (n.used || &n==node)
+                             continue;
+                           if (overlaps(*item->bbox(), n.box))
+                             return -1;
+                         }
+                         return 1;
+                       };
+    boost::uintmax_t max_it = MAX_IT;
+    auto perc_move = roots::bisect(f_collision,0.0, 1.0, stop_condition, max_it, ignore_eval_err());
+    double new_x = n_min_x * std::max(perc_move.first, perc_move.second);
+    if (new_x<0) new_x = n_min_x;
+    item->absolute_transform(translation(new_x, n_min_y));
+  }
+  else
+    item->absolute_transform(translation(n_min_x, n_min_y));
 
-  auto bbdims = dims(item->bbox());
+  node->used = true;
+  item->placed(true);
+
+  // if bbox outside node, free up full node
+  if (!overlaps(*item->bbox(), node->box)) {
+    // node up
+    node->up = nullptr;
+    // node right
+    box_t right = node->box;
+    s.nodes.push_back({ right });
+    node->right = &s.nodes.back();
+    return node;
+  }
+
+  double x_split = std::max(n_min_x, item->bbox()->max_corner().x());
+  double y_split = std::max(n_min_y, item->bbox()->max_corner().y());
 
   // node up
-  box_t up = {{n_min_x, n_min_y + bbdims.h}, {n_max_x, n_max_y}};
+  box_t up = {{n_min_x, y_split}, {n_max_x, n_max_y}};
   s.nodes.push_back({ up });
-  n->up = &s.nodes.back();
+  node->up = &s.nodes.back();
 
   // node right
-  box_t right = {{n_min_x + bbdims.w, n_min_y}, {n_max_x, n_max_y}};
+  box_t right = {{x_split, n_min_y}, {n_max_x, y_split}};
   s.nodes.push_back({ right });
-  n->right = &s.nodes.back();
+  node->right = &s.nodes.back();
 
-  return n;
+  return node;
 }

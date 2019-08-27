@@ -13,6 +13,7 @@ namespace wktnest {
   // TODO move to own header when reused elsewhere
   enum SORTING { NONE, HEIGHT };
   struct nesting_opts {
+    bool bbox = false;
     SORTING sorting = NONE;
   };
 
@@ -48,6 +49,7 @@ namespace wktnest {
     struct state_t {
       box_t bin;
       SORTING sorting;
+      bool compact;
       std::vector<item_t> items;
       std::map<const polygon_t*, const item_t*> fits;
       std::map<const item_t*, size_t> item_to_bin_idx;
@@ -63,11 +65,11 @@ namespace wktnest {
 
     template<typename T_opts>
     state_t init(const box_t& bin, const T_opts& opts) {
-      return { bin, opts.sorting };
+      return { bin, opts.sorting, !opts.bbox };
     }
 
     std::vector<matrix_t> fit(state_t& s, const std::vector<polygon_t>& polygons);
-    node_t* find_node(state_t& s, node_t* root, item_t* item);
+    node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
     node_t* split_node(state_t& s, node_t* n, item_t* item);
   }
 }
