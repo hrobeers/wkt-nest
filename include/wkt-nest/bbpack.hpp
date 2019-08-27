@@ -4,8 +4,8 @@
 #define WKTNEST_BBPACK_HPP
 
 #include <vector>
+#include <list>
 #include <map>
-#include <set>
 
 #include "wkt-nest/geometry.hpp"
 
@@ -18,7 +18,7 @@ namespace wktnest {
 
   namespace bbpack {
     class item_t {
-      static std::set<const polygon_t*> s_placed;
+      bool _placed = false;
       const polygon_t* _source;
       matrix_t _init_transform;
 
@@ -33,7 +33,8 @@ namespace wktnest {
       const polygon_t* polygon() const { return &_polygon; }
       const box_t* bbox() const { return &_bbox; }
       const matrix_t* transform() const { return &_transform; }
-      bool placed() const { return s_placed.count(_source); }
+      void placed(bool p) { _placed = p; }
+      bool placed() const { return _placed; }
 
       void relative_transform(const matrix_t& t);
       void absolute_transform(const matrix_t& t);
@@ -54,9 +55,10 @@ namespace wktnest {
       // TODO below still needed?
 
       // list of nodes per bin
-      //std::vector<std::vector<node_t>> nodes;
-      // single bin of nodes TODO switch to multiple bins
-      std::vector<node_t> nodes;
+      //std::vector<std::list<node_t>> nodes;
+      // single bin of nodes TODO switch to multiple bins?
+      // Nodes should be stored in list since vector will reallocate on resizing
+      std::list<node_t> nodes;
     };
 
     template<typename T_opts>
