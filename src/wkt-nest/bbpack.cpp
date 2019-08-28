@@ -18,7 +18,8 @@ using namespace bbpack;
 
 namespace {
   const boost::uintmax_t MAX_IT = 10;
-  const std::function<bool(double,double)> stop_condition = [](double a, double b){return false;};
+  const std::function<bool(double,double)> stop_condition = [](double a, double b) //{ return false; };
+    {return std::abs(std::abs(a)-std::abs(b))<0.01;};
 
   struct dim_t {
     double w;
@@ -169,16 +170,30 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
   if (s.compact) {
     // Move to left until collision
-    auto f_collision = [&](double perc) -> int {
+    auto f_collision = [&](double perc) -> double {
+                         if (perc==0) return 1;
                          double x = perc * n_min_x;
                          item->absolute_transform(translation(x, n_min_y));
-                         return can_claim_space(*item, *node, s)? 1 : -1;
+                         return can_claim_space(*item, *node, s)? -1*perc : 1*perc;
                        };
+
+    std::pair<double,double> bracket = {0,1};
+    bool collides = true;
+    for (double d=0.0001; d<1; d=d+0.05) {
+      if (std::signbit(f_collision(d))) {
+        bracket.second = d;
+        break;
+      }
+      bracket.first = d;
+    }
+
     boost::uintmax_t max_it = MAX_IT;
-    auto perc_move = roots::bisect(f_collision,0.0, 1.0, stop_condition, max_it, ignore_eval_err());
-    double new_x = n_min_x * std::max(perc_move.first, perc_move.second);
-    if (new_x<0) new_x = n_min_x;
-    item->absolute_transform(translation(new_x, n_min_y));
+    auto perc_move = roots::bisect(f_collision, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
+    double non_collision_perc = 1;
+    if (perc_move.first>=0 && perc_move.second>=0)
+      non_collision_perc = f_collision(perc_move.first)<0? perc_move.first : perc_move.second;
+
+    item->absolute_transform(translation(n_min_x*non_collision_perc, n_min_y));
   }
   else
     item->absolute_transform(translation(n_min_x, n_min_y));
