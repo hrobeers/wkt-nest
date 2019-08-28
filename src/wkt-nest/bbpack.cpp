@@ -48,14 +48,6 @@ namespace {
     return matrix_t(3,3,std::move(a));
   }
   matrix_t translation(point_t p) { return translation(p.x(), p.y()); }
-  template<typename Geometry>
-  bool overlaps(const Geometry& g1, const Geometry& g2) {
-    return bg::overlaps(g1, g2) || bg::within(g1, g2);
-  }
-  template<>
-  bool overlaps<item_t>(const item_t& i1, const item_t& i2) {
-    return overlaps(*i1.bbox(), *i2.bbox()) && overlaps(*i1.polygon(), *i2.polygon());
-  }
 }
 
 
@@ -139,6 +131,34 @@ node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item, size_t rec_dep
   return nullptr;
 }
 
+namespace {
+  template<typename Geometry>
+  bool overlaps(const Geometry& g1, const Geometry& g2) {
+    return bg::overlaps(g1, g2) || bg::within(g1, g2);
+  }
+  template<>
+  bool overlaps<item_t>(const item_t& i1, const item_t& i2) {
+    return overlaps(*i1.bbox(), *i2.bbox()) && overlaps(*i1.polygon(), *i2.polygon());
+  }
+  bool can_claim_space(const item_t& item, const node_t& node, const state_t& s) {
+    // Check for collision with other items
+    for (const item_t& i : s.items) {
+      if (!i.placed())
+        continue;
+      if (overlaps(item, i))
+        return false;
+    }
+    // Check if not in unused node
+    for (const node_t& n : s.nodes) {
+      if (n.used || &n==&node)
+        continue;
+      if (overlaps(*item.bbox(), n.box))
+        return false;
+    }
+    return true;
+  }
+}
+
 node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
   double n_min_x = bg::get<bg::min_corner, 0>(node->box);
@@ -152,20 +172,7 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
     auto f_collision = [&](double perc) -> int {
                          double x = perc * n_min_x;
                          item->absolute_transform(translation(x, n_min_y));
-                         // TODO won't work for multiple items referencing same source
-                         for (const item_t& i : s.items) {
-                           if (!i.placed())
-                             continue;
-                           if (overlaps(*item, i))
-                             return -1;
-                         }
-                         for (const node_t& n : s.nodes) {
-                           if (n.used || &n==node)
-                             continue;
-                           if (overlaps(*item->bbox(), n.box))
-                             return -1;
-                         }
-                         return 1;
+                         return can_claim_space(*item, *node, s)? 1 : -1;
                        };
     boost::uintmax_t max_it = MAX_IT;
     auto perc_move = roots::bisect(f_collision,0.0, 1.0, stop_condition, max_it, ignore_eval_err());
