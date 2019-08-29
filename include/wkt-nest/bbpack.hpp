@@ -37,6 +37,11 @@ namespace wktnest {
       void placed(bool p) { _placed = p; }
       bool placed() const { return _placed; }
 
+      /*
+       * Transformation is typically done L = T * R * S
+       * first scale, then rotate, lastly
+       */
+      void init_transform(const matrix_t& t);
       void relative_transform(const matrix_t& t);
       void absolute_transform(const matrix_t& t);
     };

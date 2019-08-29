@@ -49,19 +49,35 @@ namespace {
     return matrix_t(3,3,std::move(a));
   }
   matrix_t translation(point_t p) { return translation(p.x(), p.y()); }
+  matrix_t rotation(double angle) {
+    matrix_t rot = identity_matrix(3);
+    rot(0,0) = std::cos(angle);
+    rot(1,0) = std::sin(angle);
+    rot(0,1) = -rot(1,0);
+    rot(1,1) = rot(0,0);
+    return rot;
+  }
 }
 
 
-bbpack::item_t::item_t(const polygon_t* p) {
-  _source = p;
+bbpack::item_t::item_t(const polygon_t* p) :
+  _placed(false),
+  _init_transform(identity_matrix(3)),
+  _transform(identity_matrix(3)),
+  _source(p) {
   bg::envelope(*_source,_bbox);
-  // initial transform = move to origin TODO extend with optimal rotation
-  _init_transform = translation(-_bbox.min_corner().x(), -_bbox.min_corner().y());
+  // initial transform = optimal rotation and move to origin
+  init_transform(identity_matrix(3));
+}
+
+void item_t::init_transform(const matrix_t& t) {
+  absolute_transform(t);
+  _init_transform = ublas::prod(translation(-_bbox.min_corner().x(), -_bbox.min_corner().y()), _transform);
   absolute_transform(identity_matrix(3));
 }
 
 void item_t::relative_transform(const matrix_t& t) {
-  _transform = ublas::prod(_transform,t);
+  _transform = ublas::prod(t, _transform);
 
   // Apply transformation to source polygon
   _polygon = ::transform(*_source, _transform);
@@ -75,11 +91,34 @@ void item_t::absolute_transform(const matrix_t& t) {
 }
 
 
+#include <boost/math/tools/minima.hpp>
+#include <boost/geometry/algorithms/area.hpp>
+namespace {
+  void create_items(state_t& s, const polygon_t& p) {
+    item_t i(&p);
+    auto f_area = [&](double angle) -> double {
+                    i.absolute_transform(rotation(angle));
+                    return bg::area(*i.bbox());
+                  };
+    boost::uintmax_t max_iter = MAX_IT;
+    auto min = boost::math::tools::brent_find_minima(f_area, M_PI/8, M_PI*3/8, 4, max_iter);
+    // TODO remove random scaling
+    /*
+    matrix_t scale = identity_matrix(3) *
+      ((1-0.2) * ((double)rand() / (double)RAND_MAX) + 0.2);
+    scale(2,2) = 1;
+    i.init_transform(ublas::prod(rotation(min.first), scale));
+    */
+    i.init_transform(rotation(min.first));
+    s.items.push_back(i);
+  }
+}
+
 std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygons) {
 
   s.items.reserve(polygons.size());
   for (const polygon_t& p : polygons)
-    s.items.push_back(item_t(&p));
+    create_items(s, p);
 
   if (s.sorting == SORTING::HEIGHT)
     std::sort(s.items.begin(), s.items.end(), [](const item_t& i1, const item_t& i2){
@@ -170,16 +209,20 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
   // TODO refactor compaction routine (deduplicate code)
   if (s.compact) {
+    double non_collision_x = n_min_x;
+    double non_collision_y = n_min_y;
+    std::pair<double,double> bracket, perc_move;
+    boost::uintmax_t max_it = MAX_IT;
+
     // Move to left until collision
     auto f_collision_x = [&](double perc) -> double {
                          if (perc==0) return 1;
                          double x = perc * n_min_x;
-                         item->absolute_transform(translation(x, n_min_y));
+                         item->absolute_transform(translation(x, non_collision_y));
                          return can_claim_space(*item, *node, s)? -1*perc : 1*perc;
                        };
 
-    std::pair<double,double> bracket = {0,1};
-    bool collides = true;
+    bracket = {0,1};
     for (double d=0.0001; d<1; d=d+0.05) {
       if (std::signbit(f_collision_x(d))) {
         bracket.second = d;
@@ -188,24 +231,22 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
       bracket.first = d;
     }
 
-    boost::uintmax_t max_it = MAX_IT;
-    auto perc_move = roots::bisect(f_collision_x, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
-    double non_collision_x = n_min_x;
+    max_it = MAX_IT;
+    perc_move = roots::bisect(f_collision_x, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
     if (perc_move.first>=0 && perc_move.second>=0)
       non_collision_x *= f_collision_x(perc_move.first)<0? perc_move.first : perc_move.second;
 
-    //item->absolute_transform(translation(non_collision_x, n_min_y));
+    //item->absolute_transform(translation(non_collision_x, non_collision_y));
 
     // Move to down until collision
     auto f_collision_y = [&](double perc) -> double {
-                    if (perc==0) return 1;
-                    double y = perc * n_min_y;
-                    item->absolute_transform(translation(non_collision_x, y));
-                    return can_claim_space(*item, *node, s)? -1*perc : 1*perc;
-                  };
+                           if (perc==0) return 1;
+                           double y = perc * n_min_y;
+                           item->absolute_transform(translation(non_collision_x, y));
+                           return can_claim_space(*item, *node, s)? -1*perc : 1*perc;
+                         };
 
     bracket = {0,1};
-    collides = true;
     for (double d=0.0001; d<1; d=d+0.05) {
       if (std::signbit(f_collision_y(d))) {
         bracket.second = d;
@@ -216,7 +257,6 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
     max_it = MAX_IT;
     perc_move = roots::bisect(f_collision_y, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
-    double non_collision_y = n_min_y;
     if (perc_move.first>=0 && perc_move.second>=0)
       non_collision_y *= f_collision_y(perc_move.first)<0? perc_move.first : perc_move.second;
 
@@ -243,6 +283,7 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
    * A small downwards move of an element can make the entire row unusable
   double x_split = std::max(n_min_x, std::min(std::ceil(item->bbox()->max_corner().x()), n_max_x));
   double y_split = std::max(n_min_y, std::min(std::ceil(item->bbox()->max_corner().y()), n_max_y));
+  /*
   */
   double x_split = std::ceil(n_min_x + dims(item->bbox()).w);
   double y_split = std::ceil(n_min_y + dims(item->bbox()).h);
