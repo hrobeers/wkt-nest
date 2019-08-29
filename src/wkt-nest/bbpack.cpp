@@ -239,8 +239,13 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
     return node;
   }
 
-  double x_split = std::max(n_min_x, item->bbox()->max_corner().x());
-  double y_split = std::max(n_min_y, item->bbox()->max_corner().y());
+  /* Splitting on bbox is more robust when having many equal sized objects
+   * A small downwards move of an element can make the entire row unusable
+  double x_split = std::max(n_min_x, std::min(std::ceil(item->bbox()->max_corner().x()), n_max_x));
+  double y_split = std::max(n_min_y, std::min(std::ceil(item->bbox()->max_corner().y()), n_max_y));
+  */
+  double x_split = std::ceil(n_min_x + dims(item->bbox()).w);
+  double y_split = std::ceil(n_min_y + dims(item->bbox()).h);
 
   // node up
   box_t up = {{n_min_x, y_split}, {n_max_x, n_max_y}};
