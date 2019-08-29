@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
       for (auto item : state.items)
         if (item.placed()) {
           // Draw the geometries on the SVG map, using a specific SVG style
-          mapper.map(*item.bbox(), "fill-opacity:0.3;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:2");
+          mapper.map(*item.bbox(), "fill-opacity:0.2;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:1");
           mapper.map(*item.polygon(), "fill-opacity:0.3;fill:rgb(212,0,0);stroke:rgb(212,0,0);stroke-width:2");
         }
 
