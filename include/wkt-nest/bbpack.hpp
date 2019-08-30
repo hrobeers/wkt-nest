@@ -19,7 +19,7 @@ namespace wktnest {
 
   namespace bbpack {
     class item_t {
-      bool _placed = false;
+      bool _placed;
       const polygon_t* _source;
       matrix_t _init_transform;
 
@@ -56,7 +56,7 @@ namespace wktnest {
       SORTING sorting;
       bool compact;
       std::vector<item_t> items;
-      std::map<const polygon_t*, const item_t*> fits;
+      std::map<const polygon_t*, item_t*> fits;
       std::map<const item_t*, size_t> item_to_bin_idx;
 
       // TODO below still needed?

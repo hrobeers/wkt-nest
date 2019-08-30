@@ -114,39 +114,6 @@ namespace {
   }
 }
 
-std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygons) {
-
-  s.items.reserve(polygons.size());
-  for (const polygon_t& p : polygons)
-    create_items(s, p);
-
-  if (s.sorting == SORTING::HEIGHT)
-    std::sort(s.items.begin(), s.items.end(), [](const item_t& i1, const item_t& i2){
-                                                return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
-                                              });
-
-  // construct root
-  s.nodes.push_back({s.bin});
-  node_t* root = &s.nodes.back();
-
-  for (item_t& item : s.items)
-    if (auto node = find_node(s, root, &item)) // TODO else pack in other bin
-      if (split_node(s, node, &item))
-        s.fits[item.source()] = &item;
-
-  // Create the transformations vector
-  std::vector<matrix_t> transformations;
-  transformations.resize(s.items.size());
-  std::transform(polygons.cbegin(), polygons.cend(), transformations.begin(),
-                 [&s](const polygon_t& p) -> matrix_t {
-                   if (!s.fits[&p])
-                     return identity_matrix(3);
-                   return *(s.fits[&p]->transform());
-                 });
-
-  return transformations;
-}
-
 node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
 
   if (rec_depth>255)
@@ -184,19 +151,12 @@ namespace {
   bool overlaps<item_t>(const item_t& i1, const item_t& i2) {
     return overlaps(*i1.bbox(), *i2.bbox()) && overlaps(*i1.polygon(), *i2.polygon());
   }
-  bool can_claim_space(const item_t& item, const node_t& node, const state_t& s) {
+  bool can_claim_space(const item_t& item, const state_t& s) {
     // Check for collision with other items
     for (const item_t& i : s.items) {
       if (!i.placed())
         continue;
       if (overlaps(item, i))
-        return false;
-    }
-    // Check if not in unused node
-    for (const node_t& n : s.nodes) {
-      if (n.used || &n==&node)
-        continue;
-      if (overlaps(*item.bbox(), n.box))
         return false;
     }
     return within(*item.bbox(), s.bin);
@@ -223,7 +183,7 @@ namespace {
     }
     return bracket;
   }
-  bool find_free_space(state_t& s, node_t* node, item_t* item,
+  bool find_free_space(state_t& s, item_t* item,
                        const std::function<double(double)>& f_perc_value,
                        const std::function<matrix_t(double)>& f_transform) {
     matrix_t initial_transform = *item->transform();
@@ -232,7 +192,7 @@ namespace {
                          if (perc==0) return 1;
                          double v = f_perc_value(perc);
                          item->absolute_transform(f_transform(v));
-                         return can_claim_space(*item, *node, s)? -1*perc : 1*perc;
+                         return can_claim_space(*item, s)? -1*perc : 1*perc;
                        };
 
     std::pair<double, double> bracket = bracket_solution(f_collision);
@@ -246,30 +206,64 @@ namespace {
       return false;
     }
 
-    item->absolute_transform(f_transform(f_perc_value(f_collision(perc_move.first)<0? perc_move.first : perc_move.second)));
-    return true;
+    double free_perc = f_collision(perc_move.first)<0? perc_move.first : perc_move.second;
+    item->absolute_transform(f_transform(f_perc_value(free_perc)));
+    return free_perc<1;
   }
   template<size_t DIRECTION>
-  bool find_free_space(state_t& s, node_t* node, item_t* item) {
+  bool find_free_space(state_t& s, item_t* item) {
     assert(false);
     return false;
   }
   template<>
-  bool find_free_space<LEFT>(state_t& s, node_t* node, item_t* item) {
+  bool find_free_space<LEFT>(state_t& s, item_t* item) {
     point_t start_pnt = item->bbox()->min_corner();
 
     auto f_perc_value = [&start_pnt](double p){return p*start_pnt.x();};
     auto f_transform = [&start_pnt](double v){return translation(v,start_pnt.y());};
-    return find_free_space(s, node, item, f_perc_value, f_transform);
+    return find_free_space(s, item, f_perc_value, f_transform);
   }
   template<>
-  bool find_free_space<DOWN>(state_t& s, node_t* node, item_t* item) {
+  bool find_free_space<DOWN>(state_t& s, item_t* item) {
     point_t start_pnt = item->bbox()->min_corner();
 
     auto f_perc_value = [&start_pnt](double p){return p*start_pnt.y();};
     auto f_transform = [&start_pnt](double v){return translation(start_pnt.x(),v);};
-    return find_free_space(s, node, item, f_perc_value, f_transform);
+    return find_free_space(s, item, f_perc_value, f_transform);
   }
+}
+
+std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygons) {
+
+  s.items.reserve(polygons.size());
+  for (const polygon_t& p : polygons)
+    create_items(s, p);
+
+  if (s.sorting == SORTING::HEIGHT)
+    std::sort(s.items.begin(), s.items.end(), [](const item_t& i1, const item_t& i2){
+                                                return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
+                                              });
+
+  // construct root
+  s.nodes.push_back({s.bin});
+  node_t* root = &s.nodes.back();
+
+  for (item_t& item : s.items)
+    if (auto node = find_node(s, root, &item)) // TODO else pack in other bin
+      if (split_node(s, node, &item))
+        s.fits[item.source()] = &item;
+
+  // Create the transformations vector
+  std::vector<matrix_t> transformations;
+  transformations.resize(s.items.size());
+  std::transform(polygons.cbegin(), polygons.cend(), transformations.begin(),
+                 [&s](const polygon_t& p) -> matrix_t {
+                   if (!s.fits[&p])
+                     return identity_matrix(3);
+                   return *(s.fits[&p]->transform());
+                 });
+
+  return transformations;
 }
 
 node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
@@ -283,10 +277,11 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
   // TODO refactor compaction routine (deduplicate code)
   if (s.compact) {
-    find_free_space<LEFT>(s, node, item);
-    find_free_space<DOWN>(s, node, item);
+    for (size_t i=0; i<MAX_IT; i++)
+      if (!find_free_space<LEFT>(s, item) && !find_free_space<DOWN>(s, item))
+        break;
 
-    if (!within(*item->bbox(), s.bin))
+    if (!can_claim_space(*item,s))
       return nullptr;
   }
 
