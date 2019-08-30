@@ -165,13 +165,17 @@ node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item, size_t rec_dep
 
   auto rtdims = dims(&root->box);
   auto bbdims = dims(item->bbox());
-  if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h))
+  if ((bbdims.w <= rtdims.w*2) && (bbdims.h <= rtdims.h*2))
     return root;
 
   return nullptr;
 }
 
 namespace {
+  template<typename Geometry>
+  bool within(const Geometry& g1, const Geometry& g2) {
+    return bg::within(g1, g2);
+  }
   template<typename Geometry>
   bool overlaps(const Geometry& g1, const Geometry& g2) {
     return bg::overlaps(g1, g2) || bg::within(g1, g2);
@@ -195,7 +199,7 @@ namespace {
       if (overlaps(*item.bbox(), n.box))
         return false;
     }
-    return true;
+    return within(*item.bbox(), s.bin);
   }
 }
 
@@ -261,6 +265,9 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
       non_collision_y *= f_collision_y(perc_move.first)<0? perc_move.first : perc_move.second;
 
     item->absolute_transform(translation(non_collision_x, non_collision_y));
+
+    if (!within(*item->bbox(), s.bin))
+      return nullptr;
   }
   else
     item->absolute_transform(translation(n_min_x, n_min_y));
