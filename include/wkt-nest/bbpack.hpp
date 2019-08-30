@@ -64,6 +64,7 @@ namespace wktnest {
       // list of nodes per bin
       //std::vector<std::list<node_t>> nodes;
       // single bin of nodes TODO switch to multiple bins?
+      // or better chain calls to wkt-nest?
       // Nodes should be stored in list since vector will reallocate on resizing
       std::list<node_t> nodes;
     };

@@ -94,6 +94,7 @@ void item_t::absolute_transform(const matrix_t& t) {
 #include <boost/math/tools/minima.hpp>
 #include <boost/geometry/algorithms/area.hpp>
 namespace {
+  const std::vector<double> rotations = {M_PI/2, M_PI, M_PI*3/2};
   void create_items(state_t& s, const polygon_t& p) {
     item_t i(&p);
     auto f_area = [&](double angle) -> double {
@@ -102,15 +103,14 @@ namespace {
                   };
     boost::uintmax_t max_iter = MAX_IT;
     auto min = boost::math::tools::brent_find_minima(f_area, M_PI/8, M_PI*3/8, 4, max_iter);
-    // TODO remove random scaling
-    /*
-    matrix_t scale = identity_matrix(3) *
-      ((1-0.2) * ((double)rand() / (double)RAND_MAX) + 0.2);
-    scale(2,2) = 1;
-    i.init_transform(ublas::prod(rotation(min.first), scale));
-    */
     i.init_transform(rotation(min.first));
     s.items.push_back(i);
+
+    for (double r : rotations) {
+      item_t ir(&p);
+      ir.init_transform(rotation(min.first+r));
+      s.items.push_back(ir);
+    }
   }
 }
 
@@ -249,9 +249,10 @@ std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& poly
   node_t* root = &s.nodes.back();
 
   for (item_t& item : s.items)
-    if (auto node = find_node(s, root, &item)) // TODO else pack in other bin
-      if (split_node(s, node, &item))
-        s.fits[item.source()] = &item;
+    if (!s.fits[item.source()])
+      if (auto node = find_node(s, root, &item)) // TODO else pack in other bin
+        if (split_node(s, node, &item))
+          s.fits[item.source()] = &item;
 
   // Create the transformations vector
   std::vector<matrix_t> transformations;
@@ -275,7 +276,6 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
   item->absolute_transform(translation(n_min_x, n_min_y));
 
-  // TODO refactor compaction routine (deduplicate code)
   if (s.compact) {
     for (size_t i=0; i<MAX_IT; i++)
       if (!find_free_space<LEFT>(s, item) && !find_free_space<DOWN>(s, item))
