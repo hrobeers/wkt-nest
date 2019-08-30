@@ -201,6 +201,75 @@ namespace {
     }
     return within(*item.bbox(), s.bin);
   }
+
+  enum direction {
+                  ANY   =0,
+                  LEFT  =0x1,
+                  RIGHT =0x2,
+                  UP    =0x4,
+                  DOWN  =0x8,
+
+                  FALLING = LEFT | DOWN,
+                  RISING  = RIGHT | UP,
+  };
+  std::pair<double, double> bracket_solution(const std::function<double(double)>& f_collision) {
+    std::pair<double,double> bracket = {0,1};
+    for (double d=0.0001; d<1; d=d+0.05) {
+      if (std::signbit(f_collision(d))) {
+        bracket.second = d;
+        break;
+      }
+      bracket.first = d;
+    }
+    return bracket;
+  }
+  bool find_free_space(state_t& s, node_t* node, item_t* item,
+                       const std::function<double(double)>& f_perc_value,
+                       const std::function<matrix_t(double)>& f_transform) {
+    matrix_t initial_transform = *item->transform();
+    // Move to left until collision
+    auto f_collision = [&](double perc) -> double {
+                         if (perc==0) return 1;
+                         double v = f_perc_value(perc);
+                         item->absolute_transform(f_transform(v));
+                         return can_claim_space(*item, *node, s)? -1*perc : 1*perc;
+                       };
+
+    std::pair<double, double> bracket = bracket_solution(f_collision);
+
+    boost::uintmax_t max_it = MAX_IT;
+    std::pair<double,double> perc_move = roots::bisect(f_collision, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
+
+    if (perc_move.first<0 || perc_move.second<0) {
+      // reset to start point
+      item->absolute_transform(initial_transform);
+      return false;
+    }
+
+    item->absolute_transform(f_transform(f_perc_value(f_collision(perc_move.first)<0? perc_move.first : perc_move.second)));
+    return true;
+  }
+  template<size_t DIRECTION>
+  bool find_free_space(state_t& s, node_t* node, item_t* item) {
+    assert(false);
+    return false;
+  }
+  template<>
+  bool find_free_space<LEFT>(state_t& s, node_t* node, item_t* item) {
+    point_t start_pnt = item->bbox()->min_corner();
+
+    auto f_perc_value = [&start_pnt](double p){return p*start_pnt.x();};
+    auto f_transform = [&start_pnt](double v){return translation(v,start_pnt.y());};
+    return find_free_space(s, node, item, f_perc_value, f_transform);
+  }
+  template<>
+  bool find_free_space<DOWN>(state_t& s, node_t* node, item_t* item) {
+    point_t start_pnt = item->bbox()->min_corner();
+
+    auto f_perc_value = [&start_pnt](double p){return p*start_pnt.y();};
+    auto f_transform = [&start_pnt](double v){return translation(start_pnt.x(),v);};
+    return find_free_space(s, node, item, f_perc_value, f_transform);
+  }
 }
 
 node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
@@ -210,67 +279,16 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
   double n_max_x = bg::get<bg::max_corner, 0>(node->box);
   double n_max_y = bg::get<bg::max_corner, 1>(node->box);
 
+  item->absolute_transform(translation(n_min_x, n_min_y));
 
   // TODO refactor compaction routine (deduplicate code)
   if (s.compact) {
-    double non_collision_x = n_min_x;
-    double non_collision_y = n_min_y;
-    std::pair<double,double> bracket, perc_move;
-    boost::uintmax_t max_it = MAX_IT;
-
-    // Move to left until collision
-    auto f_collision_x = [&](double perc) -> double {
-                         if (perc==0) return 1;
-                         double x = perc * n_min_x;
-                         item->absolute_transform(translation(x, non_collision_y));
-                         return can_claim_space(*item, *node, s)? -1*perc : 1*perc;
-                       };
-
-    bracket = {0,1};
-    for (double d=0.0001; d<1; d=d+0.05) {
-      if (std::signbit(f_collision_x(d))) {
-        bracket.second = d;
-        break;
-      }
-      bracket.first = d;
-    }
-
-    max_it = MAX_IT;
-    perc_move = roots::bisect(f_collision_x, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
-    if (perc_move.first>=0 && perc_move.second>=0)
-      non_collision_x *= f_collision_x(perc_move.first)<0? perc_move.first : perc_move.second;
-
-    //item->absolute_transform(translation(non_collision_x, non_collision_y));
-
-    // Move to down until collision
-    auto f_collision_y = [&](double perc) -> double {
-                           if (perc==0) return 1;
-                           double y = perc * n_min_y;
-                           item->absolute_transform(translation(non_collision_x, y));
-                           return can_claim_space(*item, *node, s)? -1*perc : 1*perc;
-                         };
-
-    bracket = {0,1};
-    for (double d=0.0001; d<1; d=d+0.05) {
-      if (std::signbit(f_collision_y(d))) {
-        bracket.second = d;
-        break;
-      }
-      bracket.first = d;
-    }
-
-    max_it = MAX_IT;
-    perc_move = roots::bisect(f_collision_y, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
-    if (perc_move.first>=0 && perc_move.second>=0)
-      non_collision_y *= f_collision_y(perc_move.first)<0? perc_move.first : perc_move.second;
-
-    item->absolute_transform(translation(non_collision_x, non_collision_y));
+    find_free_space<LEFT>(s, node, item);
+    find_free_space<DOWN>(s, node, item);
 
     if (!within(*item->bbox(), s.bin))
       return nullptr;
   }
-  else
-    item->absolute_transform(translation(n_min_x, n_min_y));
 
   node->used = true;
   item->placed(true);
