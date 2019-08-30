@@ -279,6 +279,7 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
   if (s.compact) {
     for (size_t i=0; i<MAX_IT; i++)
       if (!find_free_space<LEFT>(s, item) && !find_free_space<DOWN>(s, item))
+        // TODO apparently never reached?
         break;
 
     if (!can_claim_space(*item,s))
