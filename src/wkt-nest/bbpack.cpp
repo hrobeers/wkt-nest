@@ -150,9 +150,10 @@ node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item, size_t rec_dep
   auto rtdims = dims(&root->box);
   auto bbdims = dims(item->bbox());
 
-  // do fit *2 height as compaction might still push it inside
-  // do not fit *2 width, since non-fits will be skipped, while there might be place up
-  if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h*2))
+  double fit_factor = s.compact? 2 : 1;
+  // do fit height with fit_factor as compaction might still push it inside
+  // do not use fit_factor for width, since non-fits will be skipped, while there might be place up
+  if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h*fit_factor))
     return root;
 
   return nullptr;
@@ -301,8 +302,8 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
   if (s.compact) {
     for (size_t i=0; i<MAX_IT; i++) {
-      bool left = find_free_space<LEFT>(s, item);
       bool down = find_free_space<DOWN>(s, item);
+      bool left = find_free_space<LEFT>(s, item);
       if (!left && !down)
         // TODO apparently never reached?
         break;
