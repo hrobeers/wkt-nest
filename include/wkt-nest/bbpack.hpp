@@ -33,6 +33,7 @@ namespace wktnest {
       const polygon_t* source() const { return _source; }
       const polygon_t* polygon() const { return &_polygon; }
       const box_t* bbox() const { return &_bbox; }
+      const matrix_t* init_transform() const { return &_init_transform; }
       const matrix_t* transform() const { return &_transform; }
       void placed(bool p) { _placed = p; }
       bool placed() const { return _placed; }
@@ -55,7 +56,7 @@ namespace wktnest {
       box_t bin;
       SORTING sorting;
       bool compact;
-      std::vector<item_t> items;
+      std::list<item_t> items;
       std::map<const polygon_t*, item_t*> fits;
       std::map<const item_t*, size_t> item_to_bin_idx;
 

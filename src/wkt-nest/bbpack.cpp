@@ -94,7 +94,7 @@ void item_t::absolute_transform(const matrix_t& t) {
 #include <boost/math/tools/minima.hpp>
 #include <boost/geometry/algorithms/area.hpp>
 namespace {
-  const std::vector<double> rotations = {M_PI/2, M_PI, M_PI*3/2};
+  const std::vector<double> rotations = {M_PI/2};
   void create_items(state_t& s, const polygon_t& p) {
     item_t i(&p);
     auto f_area = [&](double angle) -> double {
@@ -110,6 +110,23 @@ namespace {
       item_t ir(&p);
       ir.init_transform(rotation(min.first+r));
       s.items.push_back(ir);
+    }
+  }
+  void add_flips(std::list<item_t>& items) {
+    bool before = false;
+    auto it=items.begin();
+    while (it!=items.end()) {
+      item_t flip(it->source());
+      flip.init_transform(ublas::prod(rotation(M_PI), *it->init_transform()));
+      // Alternate before aft insertion (known to work well for fins)
+      if (before = !before) {
+        items.insert(it, flip);
+        it++;
+      }
+      else {
+        it++;
+        items.insert(it, flip);
+      }
     }
   }
 }
@@ -132,7 +149,10 @@ node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item, size_t rec_dep
 
   auto rtdims = dims(&root->box);
   auto bbdims = dims(item->bbox());
-  if ((bbdims.w <= rtdims.w*2) && (bbdims.h <= rtdims.h*2))
+
+  // do fit *2 height as compaction might still push it inside
+  // do not fit *2 width, since non-fits will be skipped, while there might be place up
+  if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h*2))
     return root;
 
   return nullptr;
@@ -174,6 +194,7 @@ namespace {
   };
   std::pair<double, double> bracket_solution(const std::function<double(double)>& f_collision) {
     std::pair<double,double> bracket = {0,1};
+    /* TODO make bracketing optional
     for (double d=0.0001; d<1; d=d+0.05) {
       if (std::signbit(f_collision(d))) {
         bracket.second = d;
@@ -181,6 +202,7 @@ namespace {
       }
       bracket.first = d;
     }
+    */
     return bracket;
   }
   bool find_free_space(state_t& s, item_t* item,
@@ -235,14 +257,15 @@ namespace {
 
 std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygons) {
 
-  s.items.reserve(polygons.size());
   for (const polygon_t& p : polygons)
     create_items(s, p);
 
   if (s.sorting == SORTING::HEIGHT)
-    std::sort(s.items.begin(), s.items.end(), [](const item_t& i1, const item_t& i2){
-                                                return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
-                                              });
+    s.items.sort([](const item_t& i1, const item_t& i2){
+                   return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
+                 });
+
+  add_flips(s.items);
 
   // construct root
   s.nodes.push_back({s.bin});
@@ -277,10 +300,13 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
   item->absolute_transform(translation(n_min_x, n_min_y));
 
   if (s.compact) {
-    for (size_t i=0; i<MAX_IT; i++)
-      if (!find_free_space<LEFT>(s, item) && !find_free_space<DOWN>(s, item))
+    for (size_t i=0; i<MAX_IT; i++) {
+      bool left = find_free_space<LEFT>(s, item);
+      bool down = find_free_space<DOWN>(s, item);
+      if (!left && !down)
         // TODO apparently never reached?
         break;
+    }
 
     if (!can_claim_space(*item,s))
       return nullptr;
@@ -289,6 +315,7 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
   node->used = true;
   item->placed(true);
 
+  /*
   // if bbox outside node, free up full node
   if (!overlaps(*item->bbox(), node->box)) {
     // node up
@@ -299,15 +326,22 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
     node->right = &s.nodes.back();
     return node;
   }
+  */
 
   /* Splitting on bbox is more robust when having many equal sized objects
    * A small downwards move of an element can make the entire row unusable
+   */
   double x_split = std::max(n_min_x, std::min(std::ceil(item->bbox()->max_corner().x()), n_max_x));
   double y_split = std::max(n_min_y, std::min(std::ceil(item->bbox()->max_corner().y()), n_max_y));
+
   /*
-  */
   double x_split = std::ceil(n_min_x + dims(item->bbox()).w);
   double y_split = std::ceil(n_min_y + dims(item->bbox()).h);
+
+  auto item_box = item->bbox();
+  double x_split = item_box->max_corner().x();
+  double y_split = item_box->max_corner().y();
+  */
 
   // node up
   box_t up = {{n_min_x, y_split}, {n_max_x, n_max_y}};
