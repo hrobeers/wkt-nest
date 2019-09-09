@@ -4,7 +4,7 @@
 #include <boost/geometry/algorithms/envelope.hpp>
 #include <boost/geometry/arithmetic/arithmetic.hpp>
 #include <boost/geometry/algorithms/for_each.hpp>
-#include <boost/geometry/algorithms/overlaps.hpp>
+#include <boost/geometry/algorithms/intersects.hpp>
 #include <boost/geometry/algorithms/within.hpp>
 namespace bg = boost::geometry;
 
@@ -165,19 +165,19 @@ namespace {
     return bg::within(g1, g2);
   }
   template<typename Geometry>
-  bool overlaps(const Geometry& g1, const Geometry& g2) {
-    return bg::overlaps(g1, g2) || bg::within(g1, g2);
+  bool collide(const Geometry& g1, const Geometry& g2) {
+    return bg::intersects(g1, g2);
   }
   template<>
-  bool overlaps<item_t>(const item_t& i1, const item_t& i2) {
-    return overlaps(*i1.bbox(), *i2.bbox()) && overlaps(*i1.polygon(), *i2.polygon());
+  bool collide<item_t>(const item_t& i1, const item_t& i2) {
+    return collide(*i1.bbox(), *i2.bbox()) && collide(*i1.polygon(), *i2.polygon());
   }
   bool can_claim_space(const item_t& item, const state_t& s) {
     // Check for collision with other items
     for (const item_t& i : s.items) {
       if (!i.placed())
         continue;
-      if (overlaps(item, i))
+      if (collide(item, i))
         return false;
     }
     return within(*item.bbox(), s.bin);
@@ -318,7 +318,7 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
   /*
   // if bbox outside node, free up full node
-  if (!overlaps(*item->bbox(), node->box)) {
+  if (!collide(*item->bbox(), node->box)) {
     // node up
     node->up = nullptr;
     // node right
