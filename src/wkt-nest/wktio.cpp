@@ -41,20 +41,51 @@ namespace {
   }
 }
 
+namespace {
+  const crd_t f=100000;
+
+  typedef double N;
+  typedef boost::geometry::model::d2::point_xy<N> point;
+  typedef boost::geometry::model::polygon<point> polygon;
+  typedef boost::geometry::model::box<point> box;
+
+  template<typename C>
+  C to_crd_t(const N& n) {
+    return (C)(n*f);
+  }
+  template<>
+  N to_crd_t<N>(const N& n) {
+    return n*f;
+  }
+  inline
+  crd_t to_crd_t(const N& n) {
+    return to_crd_t<crd_t>(n);
+  }
+}
+
+#include <boost/geometry/algorithms/for_each.hpp>
 std::optional<box_t> wktnest::read_box(std::istream &in) {
   if (auto s = read_token(BOX, in)) {
-    box_t b;
+    box b;
     boost::geometry::read_wkt(*s, b);
-    return b;
+    box_t b2 = {{to_crd_t(b.min_corner().x()), to_crd_t(b.min_corner().y())},
+                {to_crd_t(b.max_corner().x()), to_crd_t(b.max_corner().y())}};
+    return b2;
   }
   return std::optional<box_t>();
 }
 
 std::optional<polygon_t> wktnest::read_polygon(std::istream &in) {
   if (auto s = read_token(POLYGON, in)) {
-    polygon_t p;
+    polygon p;
     boost::geometry::read_wkt(*s, p);
-    return p;
+    boost::geometry::for_each_point(p, [](point& pnt){
+                                         pnt.x(to_crd_t(pnt.x()));
+                                         pnt.y(to_crd_t(pnt.y()));
+                                       });
+    polygon_t p2;
+    boost::geometry::transform(p, p2);
+    return p2;
   }
   return std::optional<polygon_t>();
 }

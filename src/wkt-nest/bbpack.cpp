@@ -18,24 +18,24 @@ using namespace bbpack;
 
 namespace {
   const boost::uintmax_t MAX_IT = 10;
-  const std::function<bool(double,double)> stop_condition = [](double a, double b) //{ return false; };
+  const std::function<bool(crd_t,crd_t)> stop_condition = [](crd_t a, crd_t b) //{ return false; };
     {return std::abs(std::abs(a)-std::abs(b))<0.01;};
 
   struct dim_t {
-    double w;
-    double h;
+    crd_t w;
+    crd_t h;
   };
   dim_t dims(const box_t* b) {
-    double min_x = bg::get<bg::min_corner, 0>(*b);
-    double min_y = bg::get<bg::min_corner, 1>(*b);
-    double max_x = bg::get<bg::max_corner, 0>(*b);
-    double max_y = bg::get<bg::max_corner, 1>(*b);
+    crd_t min_x = bg::get<bg::min_corner, 0>(*b);
+    crd_t min_y = bg::get<bg::min_corner, 1>(*b);
+    crd_t max_x = bg::get<bg::max_corner, 0>(*b);
+    crd_t max_y = bg::get<bg::max_corner, 1>(*b);
     return { max_x-min_x, max_y-min_y };
   }
   polygon_t transform(const polygon_t& p, const matrix_t& t) {
     polygon_t result = p;
     bg::for_each_point(result, [&t](point_t& p) {
-                                 vector_t vec({p.x(),p.y(),1});
+                                 vector_t vec({(flt_t)p.x(),(flt_t)p.y(),1});
                                  vector_t r = ublas::prod(t, vec);
                                  bg::set<0>(p, r(0));
                                  bg::set<1>(p, r(1));
@@ -97,7 +97,7 @@ namespace {
   const std::vector<double> rotations = {M_PI/2};
   void create_items(state_t& s, const polygon_t& p) {
     item_t i(&p);
-    auto f_area = [&](double angle) -> double {
+    auto f_area = [&](double angle) {
                     i.absolute_transform(rotation(angle));
                     return bg::area(*i.bbox());
                   };
@@ -150,7 +150,7 @@ node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item, size_t rec_dep
   auto rtdims = dims(&root->box);
   auto bbdims = dims(item->bbox());
 
-  double fit_factor = s.compact? 2 : 1;
+  auto fit_factor = s.compact? 2 : 1;
   // do fit height with fit_factor as compaction might still push it inside
   // do not use fit_factor for width, since non-fits will be skipped, while there might be place up
   if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h*fit_factor))
@@ -293,10 +293,10 @@ std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& poly
 
 node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
-  double n_min_x = bg::get<bg::min_corner, 0>(node->box);
-  double n_min_y = bg::get<bg::min_corner, 1>(node->box);
-  double n_max_x = bg::get<bg::max_corner, 0>(node->box);
-  double n_max_y = bg::get<bg::max_corner, 1>(node->box);
+  crd_t n_min_x = bg::get<bg::min_corner, 0>(node->box);
+  crd_t n_min_y = bg::get<bg::min_corner, 1>(node->box);
+  crd_t n_max_x = bg::get<bg::max_corner, 0>(node->box);
+  crd_t n_max_y = bg::get<bg::max_corner, 1>(node->box);
 
   item->absolute_transform(translation(n_min_x, n_min_y));
 
@@ -331,17 +331,19 @@ node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
 
   /* Splitting on bbox is more robust when having many equal sized objects
    * A small downwards move of an element can make the entire row unusable
-   */
-  double x_split = std::max(n_min_x, std::min(std::ceil(item->bbox()->max_corner().x()), n_max_x));
-  double y_split = std::max(n_min_y, std::min(std::ceil(item->bbox()->max_corner().y()), n_max_y));
+  crd_t x_split = std::max(n_min_x, std::min(std::ceil(item->bbox()->max_corner().x()), n_max_x));
+  crd_t y_split = std::max(n_min_y, std::min(std::ceil(item->bbox()->max_corner().y()), n_max_y));
+  */
+  crd_t x_split = std::max(n_min_x, std::min(item->bbox()->max_corner().x(), n_max_x));
+  crd_t y_split = std::max(n_min_y, std::min(item->bbox()->max_corner().y(), n_max_y));
 
   /*
-  double x_split = std::ceil(n_min_x + dims(item->bbox()).w);
-  double y_split = std::ceil(n_min_y + dims(item->bbox()).h);
+  crd_t x_split = std::ceil(n_min_x + dims(item->bbox()).w);
+  crd_t y_split = std::ceil(n_min_y + dims(item->bbox()).h);
 
   auto item_box = item->bbox();
-  double x_split = item_box->max_corner().x();
-  double y_split = item_box->max_corner().y();
+  crd_t x_split = item_box->max_corner().x();
+  crd_t y_split = item_box->max_corner().y();
   */
 
   // node up
