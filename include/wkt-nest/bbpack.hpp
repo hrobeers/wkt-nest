@@ -18,58 +18,6 @@ namespace wktnest {
   };
 
   namespace bbpack {
-    class item_t {
-      bool _placed;
-      const polygon_t* _source;
-      matrix_t _init_transform;
-
-      polygon_t _polygon;
-      box_t _bbox;
-      matrix_t _transform;
-
-    public:
-      item_t(const polygon_t* p);
-
-      const polygon_t* source() const { return _source; }
-      const polygon_t* polygon() const { return &_polygon; }
-      const box_t* bbox() const { return &_bbox; }
-      const matrix_t* init_transform() const { return &_init_transform; }
-      const matrix_t* transform() const { return &_transform; }
-      void placed(bool p) { _placed = p; }
-      bool placed() const { return _placed; }
-
-      /*
-       * Transformation is typically done L = T * R * S
-       * first scale, then rotate, lastly
-       */
-      void init_transform(const matrix_t& t);
-      void relative_transform(const matrix_t& t);
-      void absolute_transform(const matrix_t& t);
-    };
-    struct node_t {
-      box_t box;
-      bool used = false;
-      node_t* up = nullptr;
-      node_t* right = nullptr;
-    };
-    struct state_t {
-      box_t bin;
-      SORTING sorting;
-      bool compact;
-      std::list<item_t> items;
-      std::map<const polygon_t*, item_t*> fits;
-      std::map<const item_t*, size_t> item_to_bin_idx;
-
-      // TODO below still needed?
-
-      // list of nodes per bin
-      //std::vector<std::list<node_t>> nodes;
-      // single bin of nodes TODO switch to multiple bins?
-      // or better chain calls to wkt-nest?
-      // Nodes should be stored in list since vector will reallocate on resizing
-      std::list<node_t> nodes;
-    };
-
     struct placement {
       size_t bin= 0;
       polygon_t polygon;
@@ -84,9 +32,6 @@ namespace wktnest {
     fit_result fit(const box_t& bin, const std::vector<polygon_t>& polygons, const T_opts& opts) {
       return fit(bin, polygons, opts.sorting, !opts.bbox);
     }
-
-    node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
-    node_t* split_node(state_t& s, node_t* n, item_t* item);
   }
 }
 

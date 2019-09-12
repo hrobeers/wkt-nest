@@ -25,6 +25,7 @@ namespace {
     double w;
     double h;
   };
+
   dim_t dims(const box_t* b) {
     double min_x = bg::get<bg::min_corner, 0>(*b);
     double min_y = bg::get<bg::min_corner, 1>(*b);
@@ -32,6 +33,7 @@ namespace {
     double max_y = bg::get<bg::max_corner, 1>(*b);
     return { max_x-min_x, max_y-min_y };
   }
+
   polygon_t transform(const polygon_t& p, const matrix_t& t) {
     polygon_t result = p;
     bg::for_each_point(result, [&t](point_t& p) {
@@ -42,6 +44,7 @@ namespace {
                                });
     return result;
   }
+
   matrix_t translation(double x, double y) {
     array_t a ({1,0,x,
                 0,1,y,
@@ -49,6 +52,7 @@ namespace {
     return matrix_t(3,3,std::move(a));
   }
   matrix_t translation(point_t p) { return translation(p.x(), p.y()); }
+
   matrix_t rotation(double angle) {
     matrix_t rot = identity_matrix(3);
     rot(0,0) = std::cos(angle);
@@ -57,39 +61,83 @@ namespace {
     rot(1,1) = rot(0,0);
     return rot;
   }
+
+  struct node_t {
+    box_t box;
+    bool used = false;
+    node_t* up = nullptr;
+    node_t* right = nullptr;
+  };
+
+  class item_t {
+    bool _placed;
+    const polygon_t* _source;
+    matrix_t _init_transform;
+
+    polygon_t _polygon;
+    box_t _bbox;
+    matrix_t _transform;
+
+  public:
+    item_t(const polygon_t* p) :
+      _placed(false),
+      _init_transform(identity_matrix(3)),
+      _transform(identity_matrix(3)),
+      _source(p) {
+      bg::envelope(*_source,_bbox);
+      // initial transform = optimal rotation and move to origin
+      init_transform(identity_matrix(3));
+    }
+
+    const polygon_t* source() const { return _source; }
+    const polygon_t* polygon() const { return &_polygon; }
+    const box_t* bbox() const { return &_bbox; }
+    const matrix_t* init_transform() const { return &_init_transform; }
+    const matrix_t* transform() const { return &_transform; }
+    void placed(bool p) { _placed = p; }
+    bool placed() const { return _placed; }
+
+    /*
+     * Transformation is typically done L = T * R * S
+     * first scale, then rotate, lastly
+     */
+    void relative_transform(const matrix_t& t) {
+      _transform = ublas::prod(t, _transform);
+
+      // Apply transformation to source polygon
+      _polygon = ::transform(*_source, _transform);
+      bg::envelope(_polygon,_bbox);
+    }
+    void absolute_transform(const matrix_t& t) {
+      // reset to initial transform
+      _transform = _init_transform;
+      relative_transform(t);
+    }
+    void init_transform(const matrix_t& t) {
+      absolute_transform(t);
+      _init_transform = ublas::prod(translation(-_bbox.min_corner().x(), -_bbox.min_corner().y()), _transform);
+      absolute_transform(identity_matrix(3));
+    }
+  };
+
+  struct state_t {
+    box_t bin;
+    SORTING sorting;
+    bool compact;
+    std::list<item_t> items;
+    std::map<const polygon_t*, item_t*> fits;
+    std::map<const item_t*, size_t> item_to_bin_idx;
+
+    // TODO below still needed?
+
+    // list of nodes per bin
+    //std::vector<std::list<node_t>> nodes;
+    // single bin of nodes TODO switch to multiple bins?
+    // or better chain calls to wkt-nest?
+    // Nodes should be stored in list since vector will reallocate on resizing
+    std::list<node_t> nodes;
+  };
 }
-
-
-bbpack::item_t::item_t(const polygon_t* p) :
-  _placed(false),
-  _init_transform(identity_matrix(3)),
-  _transform(identity_matrix(3)),
-  _source(p) {
-  bg::envelope(*_source,_bbox);
-  // initial transform = optimal rotation and move to origin
-  init_transform(identity_matrix(3));
-}
-
-void item_t::init_transform(const matrix_t& t) {
-  absolute_transform(t);
-  _init_transform = ublas::prod(translation(-_bbox.min_corner().x(), -_bbox.min_corner().y()), _transform);
-  absolute_transform(identity_matrix(3));
-}
-
-void item_t::relative_transform(const matrix_t& t) {
-  _transform = ublas::prod(t, _transform);
-
-  // Apply transformation to source polygon
-  _polygon = ::transform(*_source, _transform);
-  bg::envelope(_polygon,_bbox);
-}
-
-void item_t::absolute_transform(const matrix_t& t) {
-  // reset to initial transform
-  _transform = _init_transform;
-  relative_transform(t);
-}
-
 
 #include <boost/math/tools/minima.hpp>
 #include <boost/geometry/algorithms/area.hpp>
@@ -131,7 +179,10 @@ namespace {
   }
 }
 
-node_t* bbpack::find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
+node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
+node_t* split_node(state_t& s, node_t* n, item_t* item);
+
+node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
 
   if (rec_depth>255)
     return nullptr;
@@ -294,7 +345,7 @@ fit_result bbpack::fit(const box_t& bin, const std::vector<polygon_t>& polygons,
   return result;
 }
 
-node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
+node_t* split_node(state_t& s, node_t* node, item_t* item) {
 
   double n_min_x = bg::get<bg::min_corner, 0>(node->box);
   double n_min_y = bg::get<bg::min_corner, 1>(node->box);
