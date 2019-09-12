@@ -99,25 +99,24 @@ int main(int argc, char *argv[])
       }
       std::vector<polygon_t> ps = read_polygons(std::cin);
 
-      auto state = bbpack::init(*b, opts);
-      std::vector<matrix_t> fit = bbpack::fit(state, ps);
+      auto fit = bbpack::fit(*b, ps, opts);
 
       // Declare a stream and an SVG mapper
       boost::geometry::svg_mapper<point_t> mapper(std::cout, 400, 400);
 
       // Add geometries such that all these geometries fit on the map
       mapper.add(*b);
-      for (auto item : state.items)
-        if (item.placed())
-          mapper.add(*item.bbox());
+      for (auto item : fit)
+        if (item.bin)
+          mapper.add(item.bbox);
 
       mapper.map(*b, "fill-opacity:0.5;fill:rgb(153,204,0);stroke:rgb(153,204,0);stroke-width:2", 5);
       //for (auto p : ps)
-      for (auto item : state.items)
-        if (item.placed()) {
+      for (auto item : fit)
+        if (item.bin) {
           // Draw the geometries on the SVG map, using a specific SVG style
-          mapper.map(*item.bbox(), "fill-opacity:0.2;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:1");
-          mapper.map(*item.polygon(), "fill-opacity:0.3;fill:rgb(212,0,0);stroke:rgb(212,0,0);stroke-width:2");
+          mapper.map(item.bbox, "fill-opacity:0.2;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:1");
+          mapper.map(item.polygon, "fill-opacity:0.3;fill:rgb(212,0,0);stroke:rgb(212,0,0);stroke-width:2");
         }
 
       // Destructor of map will be called - adding </svg>

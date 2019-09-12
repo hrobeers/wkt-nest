@@ -70,12 +70,21 @@ namespace wktnest {
       std::list<node_t> nodes;
     };
 
+    struct placement {
+      size_t bin= 0;
+      polygon_t polygon;
+      box_t bbox;
+      matrix_t transform;
+    };
+    typedef std::vector<placement> fit_result;
+
+    fit_result fit(const box_t& bin, const std::vector<polygon_t>& polygons, SORTING sorting, bool compact);
+
     template<typename T_opts>
-    state_t init(const box_t& bin, const T_opts& opts) {
-      return { bin, opts.sorting, !opts.bbox };
+    fit_result fit(const box_t& bin, const std::vector<polygon_t>& polygons, const T_opts& opts) {
+      return fit(bin, polygons, opts.sorting, !opts.bbox);
     }
 
-    std::vector<matrix_t> fit(state_t& s, const std::vector<polygon_t>& polygons);
     node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
     node_t* split_node(state_t& s, node_t* n, item_t* item);
   }

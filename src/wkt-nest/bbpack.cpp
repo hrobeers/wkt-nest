@@ -256,7 +256,8 @@ namespace {
   }
 }
 
-std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& polygons) {
+fit_result bbpack::fit(const box_t& bin, const std::vector<polygon_t>& polygons, SORTING sorting, bool compact) {
+  state_t s = { bin, sorting, compact };
 
   for (const polygon_t& p : polygons)
     create_items(s, p);
@@ -278,17 +279,19 @@ std::vector<matrix_t> bbpack::fit(state_t& s, const std::vector<polygon_t>& poly
         if (split_node(s, node, &item))
           s.fits[item.source()] = &item;
 
-  // Create the transformations vector
-  std::vector<matrix_t> transformations;
-  transformations.resize(s.items.size());
-  std::transform(polygons.cbegin(), polygons.cend(), transformations.begin(),
-                 [&s](const polygon_t& p) -> matrix_t {
+  // Create the result vector
+  std::vector<placement> result;
+  result.resize(polygons.size());
+  std::transform(polygons.cbegin(), polygons.cend(), result.begin(),
+                 [&s](const polygon_t& p) -> placement {
                    if (!s.fits[&p])
-                     return identity_matrix(3);
-                   return *(s.fits[&p]->transform());
+                     return {0};
+                   item_t* item = s.fits[&p];
+                   // TODO std::move from item to placement
+                   return {1,*item->polygon(),*item->bbox(),*item->transform()};
                  });
 
-  return transformations;
+  return result;
 }
 
 node_t* bbpack::split_node(state_t& s, node_t* node, item_t* item) {
