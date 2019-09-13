@@ -308,16 +308,24 @@ namespace {
   bool find_free_space<LEFT>(state_t& s, item_t* item) {
     point_t start_pnt = item->bbox()->min_corner();
 
-    auto f_perc_value = [&start_pnt](double p){return p*start_pnt.x();};
-    auto f_transform = [&start_pnt](double v){return translation(v,start_pnt.y());};
+    auto f_perc_value = [&start_pnt](double p) -> crd_t {return p*start_pnt.x();};
+    auto f_transform = [&start_pnt](crd_t v){return translation(v,start_pnt.y());};
     return find_free_space(s, item, f_perc_value, f_transform);
   }
   template<>
   bool find_free_space<DOWN>(state_t& s, item_t* item) {
     point_t start_pnt = item->bbox()->min_corner();
 
-    auto f_perc_value = [&start_pnt](double p){return p*start_pnt.y();};
-    auto f_transform = [&start_pnt](double v){return translation(start_pnt.x(),v);};
+    auto f_perc_value = [&start_pnt](double p) -> crd_t {return p*start_pnt.y();};
+    auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x(),v);};
+    return find_free_space(s, item, f_perc_value, f_transform);
+  }
+  template<>
+  bool find_free_space<DOWN|RIGHT>(state_t& s, item_t* item) {
+    point_t start_pnt = item->bbox()->min_corner();
+
+    auto f_perc_value = [&start_pnt](double p) -> crd_t {return start_pnt.y()-(p*start_pnt.y());};
+    auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x()+(v/2),start_pnt.y()-v);};
     return find_free_space(s, item, f_perc_value, f_transform);
   }
 }
@@ -376,7 +384,7 @@ node_t* split_node(state_t& s, node_t* node, item_t* item) {
 
   if (s.compact) {
     for (size_t i=0; i<MAX_IT; i++) {
-      bool down = find_free_space<DOWN>(s, item);
+      bool down = find_free_space<DOWN|RIGHT>(s, item);
       bool left = find_free_space<LEFT>(s, item);
       if (!left && !down)
         // TODO apparently never reached?
