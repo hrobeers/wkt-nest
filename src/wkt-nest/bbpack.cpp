@@ -13,53 +13,68 @@ namespace roots = boost::math::tools;
 typedef boost::math::policies::policy<boost::math::policies::evaluation_error<boost::math::policies::ignore_error>> ignore_eval_err;
 
 
-using namespace wktnest;
-using namespace bbpack;
+using namespace wktnest::bbpack;
+using wktnest::matrix_t;
+using wktnest::identity_matrix;
+using wktnest::SORTING;
+
+typedef wktnest::N flt_t;
+
+#define S 100000
+typedef int_fast32_t crd_t;
+//typedef flt_t crd_t;
+const matrix_t to_bbpack = {S,0,0,
+                            0,S,0,
+                            0,0,1};
+const matrix_t from_bbpack = {1.0/S,0,0,
+                              0,1.0/S,0,
+                              0,0,1};
+
+typedef boost::geometry::model::d2::point_xy<crd_t> point_t;
+typedef boost::geometry::model::polygon<point_t> polygon_t;
+typedef boost::geometry::model::box<point_t> box_t;
 
 namespace {
   const boost::uintmax_t MAX_IT = 10;
-  const std::function<bool(double,double)> stop_condition = [](double a, double b) //{ return false; };
+  const std::function<bool(crd_t,crd_t)> stop_condition = [](crd_t a, crd_t b) //{ return false; };
     {return std::abs(std::abs(a)-std::abs(b))<0.01;};
 
   struct dim_t {
-    double w;
-    double h;
+    crd_t w;
+    crd_t h;
   };
 
   dim_t dims(const box_t* b) {
-    double min_x = bg::get<bg::min_corner, 0>(*b);
-    double min_y = bg::get<bg::min_corner, 1>(*b);
-    double max_x = bg::get<bg::max_corner, 0>(*b);
-    double max_y = bg::get<bg::max_corner, 1>(*b);
+    crd_t min_x = bg::get<bg::min_corner, 0>(*b);
+    crd_t min_y = bg::get<bg::min_corner, 1>(*b);
+    crd_t max_x = bg::get<bg::max_corner, 0>(*b);
+    crd_t max_y = bg::get<bg::max_corner, 1>(*b);
     return { max_x-min_x, max_y-min_y };
   }
 
-  polygon_t transform(const polygon_t& p, const matrix_t& t) {
-    polygon_t result = p;
-    bg::for_each_point(result, [&t](point_t& p) {
-                                 vector_t vec({p.x(),p.y(),1});
-                                 vector_t r = ublas::prod(t, vec);
-                                 bg::set<0>(p, r(0));
-                                 bg::set<1>(p, r(1));
-                               });
+  matrix_t prod(const matrix_t& m1, const matrix_t& m2) {
+    return m1.matrix() * m2.matrix();
+  }
+
+  polygon_t transform(const wktnest::polygon_t& p, const matrix_t& t) {
+    polygon_t result;
+    bg::transform(p, result, matrix_t(t.matrix() * to_bbpack.matrix()));
     return result;
   }
 
   matrix_t translation(double x, double y) {
-    array_t a ({1,0,x,
-                0,1,y,
-                0,0,1});
-    return matrix_t(3,3,std::move(a));
+    return {1,0,x,
+            0,1,y,
+            0,0,1};
   }
   matrix_t translation(point_t p) { return translation(p.x(), p.y()); }
 
   matrix_t rotation(double angle) {
-    matrix_t rot = identity_matrix(3);
-    rot(0,0) = std::cos(angle);
-    rot(1,0) = std::sin(angle);
-    rot(0,1) = -rot(1,0);
-    rot(1,1) = rot(0,0);
-    return rot;
+    double cosa = std::cos(angle);
+    double sina = std::sin(angle);
+    return {cosa,sina,0,
+            -sina,cosa,0,
+            0,0,1};
   }
 
   struct node_t {
@@ -71,7 +86,7 @@ namespace {
 
   class item_t {
     bool _placed;
-    const polygon_t* _source;
+    const wktnest::polygon_t* _source;
     matrix_t _init_transform;
 
     polygon_t _polygon;
@@ -79,17 +94,17 @@ namespace {
     matrix_t _transform;
 
   public:
-    item_t(const polygon_t* p) :
+    item_t(const wktnest::polygon_t* p) :
       _placed(false),
-      _init_transform(identity_matrix(3)),
-      _transform(identity_matrix(3)),
+      _init_transform(identity_matrix),
+      _transform(identity_matrix),
       _source(p) {
       bg::envelope(*_source,_bbox);
       // initial transform = optimal rotation and move to origin
-      init_transform(identity_matrix(3));
+      init_transform(identity_matrix);
     }
 
-    const polygon_t* source() const { return _source; }
+    const wktnest::polygon_t* source() const { return _source; }
     const polygon_t* polygon() const { return &_polygon; }
     const box_t* bbox() const { return &_bbox; }
     const matrix_t* init_transform() const { return &_init_transform; }
@@ -102,7 +117,7 @@ namespace {
      * first scale, then rotate, lastly
      */
     void relative_transform(const matrix_t& t) {
-      _transform = ublas::prod(t, _transform);
+      _transform = prod(t, _transform);
 
       // Apply transformation to source polygon
       _polygon = ::transform(*_source, _transform);
@@ -115,8 +130,8 @@ namespace {
     }
     void init_transform(const matrix_t& t) {
       absolute_transform(t);
-      _init_transform = ublas::prod(translation(-_bbox.min_corner().x(), -_bbox.min_corner().y()), _transform);
-      absolute_transform(identity_matrix(3));
+      _init_transform = prod(translation(-_bbox.min_corner().x(), -_bbox.min_corner().y()), _transform);
+      absolute_transform(identity_matrix);
     }
   };
 
@@ -125,7 +140,7 @@ namespace {
     SORTING sorting;
     bool compact;
     std::list<item_t> items;
-    std::map<const polygon_t*, item_t*> fits;
+    std::map<const wktnest::polygon_t*, item_t*> fits;
     std::map<const item_t*, size_t> item_to_bin_idx;
 
     // TODO below still needed?
@@ -143,9 +158,9 @@ namespace {
 #include <boost/geometry/algorithms/area.hpp>
 namespace {
   const std::vector<double> rotations = {M_PI/2};
-  void create_items(state_t& s, const polygon_t& p) {
+  void create_items(state_t& s, const wktnest::polygon_t& p) {
     item_t i(&p);
-    auto f_area = [&](double angle) -> double {
+    auto f_area = [&](double angle) {
                     i.absolute_transform(rotation(angle));
                     return bg::area(*i.bbox());
                   };
@@ -165,7 +180,7 @@ namespace {
     auto it=items.begin();
     while (it!=items.end()) {
       item_t flip(it->source());
-      flip.init_transform(ublas::prod(rotation(M_PI), *it->init_transform()));
+      flip.init_transform(prod(rotation(M_PI), *it->init_transform()));
       // Alternate before aft insertion (known to work well for fins)
       if (before = !before) {
         items.insert(it, flip);
@@ -201,7 +216,7 @@ node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
   auto rtdims = dims(&root->box);
   auto bbdims = dims(item->bbox());
 
-  double fit_factor = s.compact? 2 : 1;
+  auto fit_factor = s.compact? 2 : 1;
   // do fit height with fit_factor as compaction might still push it inside
   // do not use fit_factor for width, since non-fits will be skipped, while there might be place up
   if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h*fit_factor))
@@ -307,10 +322,12 @@ namespace {
   }
 }
 
-fit_result bbpack::fit(const box_t& bin, const std::vector<polygon_t>& polygons, SORTING sorting, bool compact) {
-  state_t s = { bin, sorting, compact };
+fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wktnest::polygon_t>& polygons, SORTING sorting, bool compact) {
+  ::box_t lb;
+  bg::transform(bin, lb, to_bbpack);
+  state_t s = { lb, sorting, compact };
 
-  for (const polygon_t& p : polygons)
+  for (const wktnest::polygon_t& p : polygons)
     create_items(s, p);
 
   if (s.sorting == SORTING::HEIGHT)
@@ -338,8 +355,11 @@ fit_result bbpack::fit(const box_t& bin, const std::vector<polygon_t>& polygons,
                    if (!s.fits[&p])
                      return {0};
                    item_t* item = s.fits[&p];
-                   // TODO std::move from item to placement
-                   return {1,*item->polygon(),*item->bbox(),*item->transform()};
+                   wktnest::polygon_t rp;
+                   wktnest::box_t rb;
+                   bg::transform(*item->polygon(), rp, from_bbpack);
+                   bg::transform(*item->bbox(), rb, from_bbpack);
+                   return {1,rp,rb,*item->transform()};
                  });
 
   return result;
@@ -347,10 +367,10 @@ fit_result bbpack::fit(const box_t& bin, const std::vector<polygon_t>& polygons,
 
 node_t* split_node(state_t& s, node_t* node, item_t* item) {
 
-  double n_min_x = bg::get<bg::min_corner, 0>(node->box);
-  double n_min_y = bg::get<bg::min_corner, 1>(node->box);
-  double n_max_x = bg::get<bg::max_corner, 0>(node->box);
-  double n_max_y = bg::get<bg::max_corner, 1>(node->box);
+  crd_t n_min_x = bg::get<bg::min_corner, 0>(node->box);
+  crd_t n_min_y = bg::get<bg::min_corner, 1>(node->box);
+  crd_t n_max_x = bg::get<bg::max_corner, 0>(node->box);
+  crd_t n_max_y = bg::get<bg::max_corner, 1>(node->box);
 
   item->absolute_transform(translation(n_min_x, n_min_y));
 
@@ -385,17 +405,19 @@ node_t* split_node(state_t& s, node_t* node, item_t* item) {
 
   /* Splitting on bbox is more robust when having many equal sized objects
    * A small downwards move of an element can make the entire row unusable
-   */
-  double x_split = std::max(n_min_x, std::min(std::ceil(item->bbox()->max_corner().x()), n_max_x));
-  double y_split = std::max(n_min_y, std::min(std::ceil(item->bbox()->max_corner().y()), n_max_y));
+  crd_t x_split = std::max(n_min_x, std::min(std::ceil(item->bbox()->max_corner().x()), n_max_x));
+  crd_t y_split = std::max(n_min_y, std::min(std::ceil(item->bbox()->max_corner().y()), n_max_y));
+  */
+  crd_t x_split = std::max(n_min_x, std::min(item->bbox()->max_corner().x(), n_max_x));
+  crd_t y_split = std::max(n_min_y, std::min(item->bbox()->max_corner().y(), n_max_y));
 
   /*
-  double x_split = std::ceil(n_min_x + dims(item->bbox()).w);
-  double y_split = std::ceil(n_min_y + dims(item->bbox()).h);
+  crd_t x_split = std::ceil(n_min_x + dims(item->bbox()).w);
+  crd_t y_split = std::ceil(n_min_y + dims(item->bbox()).h);
 
   auto item_box = item->bbox();
-  double x_split = item_box->max_corner().x();
-  double y_split = item_box->max_corner().y();
+  crd_t x_split = item_box->max_corner().x();
+  crd_t y_split = item_box->max_corner().y();
   */
 
   // node up

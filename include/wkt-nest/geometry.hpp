@@ -8,8 +8,7 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/geometries/box.hpp>
 
-#include <boost/numeric/ublas/matrix.hpp>
-#include <boost/numeric/ublas/vector.hpp>
+#include <boost/geometry/strategies/transform/matrix_transformers.hpp>
 
 namespace wktnest
 {
@@ -18,11 +17,10 @@ namespace wktnest
   typedef boost::geometry::model::polygon<point_t> polygon_t;
   typedef boost::geometry::model::box<point_t> box_t;
 
-  namespace ublas = boost::numeric::ublas;
-  typedef std::vector<N> array_t;
-  typedef ublas::matrix<N, ublas::row_major, array_t> matrix_t;
-  typedef ublas::vector<N, array_t> vector_t;
-  typedef ublas::identity_matrix<N> identity_matrix;
+  typedef boost::geometry::strategy::transform::matrix_transformer<N,2,2> matrix_t;
+  const boost::qvm::mat<double,3,3> identity_matrix = {1,0,0,
+                                                       0,1,0,
+                                                       0,0,1};
 }
 
 #endif //WKTNEST_GEOMETRY_HPP
