@@ -220,7 +220,7 @@ node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
   // do fit height with fit_factor as compaction might still push it inside
   // do not use fit_factor for width, since non-fits will be skipped, while there might be place up
   if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h*fit_factor))
-    return root;
+    return split_node(s, root, item);
 
   return nullptr;
 }
@@ -352,8 +352,7 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
   for (item_t& item : s.items)
     if (!s.fits[item.source()])
       if (auto node = find_node(s, root, &item)) // TODO else pack in other bin
-        if (split_node(s, node, &item))
-          s.fits[item.source()] = &item;
+        s.fits[item.source()] = &item;
 
   // Create the result vector
   std::vector<placement> result;
