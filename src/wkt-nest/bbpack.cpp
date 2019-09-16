@@ -394,7 +394,7 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
   return result;
 }
 
-bool split_node(state_t& s, node_t* node, item_t* item, bool top_right = false) {
+bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false) {
 
   crd_t n_min_x = bg::get<bg::min_corner, 0>(node->box);
   crd_t n_min_y = bg::get<bg::min_corner, 1>(node->box);
@@ -405,11 +405,11 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool top_right = false) 
 
   if (s.compact) {
     // If new row, try placing in top right first (might still fit row below)
-    if (n_min_x==0 && n_min_y!=0 && !top_right) {
+    if (n_min_x==0 && n_min_y!=0 && !artificial) {
       auto id = dims(item->bbox());
       // Artificial top right node
-      node_t top_right_node = { {{n_max_x-id.w,n_max_y-id.h},{n_max_x, n_max_y}} };
-      if (split_node(s, &top_right_node, item, true))
+      node_t artificial_node = { {{n_max_x-id.w,n_max_y-id.h},{n_max_x, n_max_y}} };
+      if (split_node(s, &artificial_node, item, true))
         return true;
     }
 
@@ -425,9 +425,19 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool top_right = false) 
         break;
     }
 
-    // Bail out when we failed to find free space
-    if (!can_claim_space(*item,s))
+    if (!can_claim_space(*item,s)) {
+      // let's do a last desperate search on top left
+      if (!artificial) {
+        auto id = dims(item->bbox());
+        // Artificial top left node
+        node_t artificial_node = { {{0,n_max_y-id.h},{n_max_x, n_max_y}} };
+        if (split_node(s, &artificial_node, item, true))
+          return true;
+      }
+
+      // Bail out when we failed to find free space
       return false;
+    }
   }
 
   node->used = true;
