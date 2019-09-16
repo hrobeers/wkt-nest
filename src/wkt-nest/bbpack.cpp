@@ -394,7 +394,7 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
   return result;
 }
 
-node_t* split_node(state_t& s, node_t* node, item_t* item) {
+bool split_node(state_t& s, node_t* node, item_t* item, bool top_right = false) {
 
   crd_t n_min_x = bg::get<bg::min_corner, 0>(node->box);
   crd_t n_min_y = bg::get<bg::min_corner, 1>(node->box);
@@ -404,16 +404,30 @@ node_t* split_node(state_t& s, node_t* node, item_t* item) {
   item->absolute_transform(translation(n_min_x, n_min_y));
 
   if (s.compact) {
+    // If new row, try placing in top right first (might still fit row below)
+    if (n_min_x==0 && n_min_y!=0 && !top_right) {
+      auto id = dims(item->bbox());
+      // Artificial top right node
+      node_t top_right_node = { {{n_max_x-id.w,n_max_y-id.h},{n_max_x, n_max_y}} };
+      if (split_node(s, &top_right_node, item, true))
+        return true;
+    }
+
+    // Find free space
+    // First push down
+    find_free_space<DOWN>(s, item);
+    // Then iterate zigzag (LEFT & DOWN|RIGHT)
     for (size_t i=0; i<MAX_IT; i++) {
-      bool down = find_free_space<DOWN|RIGHT>(s, item);
       bool left = find_free_space<LEFT>(s, item);
+      bool down = find_free_space<DOWN|RIGHT>(s, item);
       if (!left && !down)
         // TODO apparently never reached?
         break;
     }
 
+    // Bail out when we failed to find free space
     if (!can_claim_space(*item,s))
-      return nullptr;
+      return false;
   }
 
   node->used = true;
@@ -460,7 +474,7 @@ node_t* split_node(state_t& s, node_t* node, item_t* item) {
   s.nodes.push_back({ right });
   node->right = &s.nodes.back();
 
-  return node;
+  return true;
 }
 
 node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
@@ -486,7 +500,8 @@ node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
   // do fit height with fit_factor as compaction might still push it inside
   // do not use fit_factor for width, since non-fits will be skipped, while there might be place up
   if ((bbdims.w <= rtdims.w*fit_factor) && (bbdims.h <= rtdims.h*fit_factor))
-    return split_node(s, root, item);
+    if (split_node(s, root, item))
+      return root;
 
   return nullptr;
 }
