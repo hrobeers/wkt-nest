@@ -6,11 +6,13 @@
 #include <boost/geometry/algorithms/for_each.hpp>
 #include <boost/geometry/algorithms/intersects.hpp>
 #include <boost/geometry/algorithms/within.hpp>
+#include <boost/geometry/algorithms/area.hpp>
 namespace bg = boost::geometry;
 
 #include <boost/math/tools/roots.hpp>
-namespace roots = boost::math::tools;
-typedef boost::math::policies::policy<boost::math::policies::evaluation_error<boost::math::policies::ignore_error>> ignore_eval_err;
+#include <boost/math/tools/minima.hpp>
+namespace bm = boost::math;
+typedef bm::policies::policy<bm::policies::evaluation_error<bm::policies::ignore_error>> ignore_eval_err;
 
 
 using namespace wktnest::bbpack;
@@ -152,11 +154,7 @@ namespace {
     // Nodes should be stored in list since vector will reallocate on resizing
     std::list<node_t> nodes;
   };
-}
 
-#include <boost/math/tools/minima.hpp>
-#include <boost/geometry/algorithms/area.hpp>
-namespace {
   const std::vector<double> rotations = {M_PI/2};
   void create_items(state_t& s, const wktnest::polygon_t& p) {
     item_t i(&p);
@@ -165,7 +163,7 @@ namespace {
                     return bg::area(*i.bbox());
                   };
     boost::uintmax_t max_iter = MAX_IT;
-    auto min = boost::math::tools::brent_find_minima(f_area, M_PI/8, M_PI*3/8, 4, max_iter);
+    auto min = bm::tools::brent_find_minima(f_area, M_PI/8, M_PI*3/8, 4, max_iter);
     i.init_transform(rotation(min.first));
     s.items.push_back(i);
 
@@ -192,40 +190,7 @@ namespace {
       }
     }
   }
-}
 
-node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
-node_t* split_node(state_t& s, node_t* n, item_t* item);
-
-node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
-
-  if (rec_depth>255)
-    return nullptr;
-  if (root->used) {
-    node_t* up = root->up;
-    node_t* right = root->right;
-    if (right)
-      if (node_t* node = find_node(s, right, item, ++rec_depth))
-        return node;
-    if (up)
-      if (node_t* node = find_node(s, up, item, ++rec_depth))
-        return node;
-    return nullptr;
-  }
-
-  auto rtdims = dims(&root->box);
-  auto bbdims = dims(item->bbox());
-
-  auto fit_factor = s.compact? 2 : 1;
-  // do fit height with fit_factor as compaction might still push it inside
-  // do not use fit_factor for width, since non-fits will be skipped, while there might be place up
-  if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h*fit_factor))
-    return split_node(s, root, item);
-
-  return nullptr;
-}
-
-namespace {
   template<typename Geometry>
   bool within(const Geometry& g1, const Geometry& g2) {
     return bg::within(g1, g2);
@@ -287,7 +252,7 @@ namespace {
     std::pair<double, double> bracket = bracket_solution(f_collision);
 
     boost::uintmax_t max_it = MAX_IT;
-    std::pair<double,double> perc_move = roots::bisect(f_collision, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
+    std::pair<double,double> perc_move = bm::tools::bisect(f_collision, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
 
     if (perc_move.first<0 || perc_move.second<0) {
       // reset to start point
@@ -329,6 +294,8 @@ namespace {
     return find_free_space(s, item, f_perc_value, f_transform);
   }
 }
+
+node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
 
 fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wktnest::polygon_t>& polygons, SORTING sorting, bool compact) {
   ::box_t lb;
@@ -438,4 +405,32 @@ node_t* split_node(state_t& s, node_t* node, item_t* item) {
   node->right = &s.nodes.back();
 
   return node;
+}
+
+node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
+
+  if (rec_depth>255)
+    return nullptr;
+  if (root->used) {
+    node_t* up = root->up;
+    node_t* right = root->right;
+    if (right)
+      if (node_t* node = find_node(s, right, item, ++rec_depth))
+        return node;
+    if (up)
+      if (node_t* node = find_node(s, up, item, ++rec_depth))
+        return node;
+    return nullptr;
+  }
+
+  auto rtdims = dims(&root->box);
+  auto bbdims = dims(item->bbox());
+
+  auto fit_factor = s.compact? 2 : 1;
+  // do fit height with fit_factor as compaction might still push it inside
+  // do not use fit_factor for width, since non-fits will be skipped, while there might be place up
+  if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h*fit_factor))
+    return split_node(s, root, item);
+
+  return nullptr;
 }
