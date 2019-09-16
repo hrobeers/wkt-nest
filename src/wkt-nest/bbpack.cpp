@@ -483,7 +483,9 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
 
   // node right
   box_t right = {{x_split, n_min_y}, {n_max_x, y_split}};
-  expand<DOWN>(s, right);
+  if (s.compact)
+    // TODO For some reason expanding nodes down does not work well for bbox packing
+    expand<DOWN>(s, right);
   s.nodes.push_back({ right });
   node->right = &s.nodes.back();
 
