@@ -5,6 +5,7 @@
 #include <boost/geometry/arithmetic/arithmetic.hpp>
 #include <boost/geometry/algorithms/for_each.hpp>
 #include <boost/geometry/algorithms/intersects.hpp>
+#include <boost/geometry/algorithms/intersection.hpp>
 #include <boost/geometry/algorithms/within.hpp>
 #include <boost/geometry/algorithms/area.hpp>
 namespace bg = boost::geometry;
@@ -38,7 +39,7 @@ typedef boost::geometry::model::box<point_t> box_t;
 
 namespace {
   const boost::uintmax_t MAX_IT = 10;
-  const std::function<bool(crd_t,crd_t)> stop_condition = [](crd_t a, crd_t b) //{ return false; };
+  const std::function<bool(flt_t,flt_t)> stop_condition = [](flt_t a, flt_t b) //{ return false; };
     {return std::abs(std::abs(a)-std::abs(b))<0.01;};
 
   struct dim_t {
@@ -191,19 +192,31 @@ namespace {
     }
   }
 
-  template<typename Geometry>
-  bool within(const Geometry& g1, const Geometry& g2) {
+  template<typename Geometry1, typename Geometry2>
+  bool within(const Geometry1& g1, const Geometry2& g2) {
     return bg::within(g1, g2);
   }
-  template<typename Geometry>
-  bool collide(const Geometry& g1, const Geometry& g2) {
+  template<>
+  bool within<item_t,box_t>(const item_t& g1, const box_t& g2) {
+    return bg::within(*g1.bbox(), g2);
+  }
+  template<typename Geometry1, typename Geometry2>
+  bool collide(const Geometry1& g1, const Geometry2& g2) {
     return bg::intersects(g1, g2);
   }
   template<>
-  bool collide<item_t>(const item_t& i1, const item_t& i2) {
+  bool collide<item_t, item_t>(const item_t& i1, const item_t& i2) {
     return collide(*i1.bbox(), *i2.bbox()) && collide(*i1.polygon(), *i2.polygon());
   }
-  bool can_claim_space(const item_t& item, const state_t& s) {
+  template<>
+  bool collide<box_t, item_t>(const box_t& i1, const item_t& i2) {
+    box_t inters;
+    bg::intersection(i1, *i2.bbox(), inters);
+    return bg::area(inters)>0;
+  }
+
+  template<typename Geometry>
+  bool can_claim_space(const Geometry& item, const state_t& s) {
     // Check for collision with other items
     for (const item_t& i : s.items) {
       if (!i.placed())
@@ -211,7 +224,7 @@ namespace {
       if (collide(item, i))
         return false;
     }
-    return within(*item.bbox(), s.bin);
+    return within(item, s.bin);
   }
 
   enum direction {
@@ -292,6 +305,48 @@ namespace {
     auto f_perc_value = [&start_pnt](double p) -> crd_t {return start_pnt.y()-(p*start_pnt.y());};
     auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x()+(v/2),start_pnt.y()-v);};
     return find_free_space(s, item, f_perc_value, f_transform);
+  }
+
+  // TODO combine with find_free_space?
+  bool expand(state_t& s, box_t& box,
+              const std::function<crd_t(double)>& f_perc_value,
+              const std::function<void(box_t&, crd_t)>& f_transform) {
+    auto f_collision = [&](double perc) -> double {
+                         if (perc==0) return 1;
+                         crd_t v = f_perc_value(perc);
+                         f_transform(box, v);
+                         return can_claim_space(box, s)? -1*perc : 1*perc;
+                       };
+
+    std::pair<double, double> bracket = bracket_solution(f_collision);
+
+    boost::uintmax_t max_it = MAX_IT;
+    std::pair<double,double> perc_move = bm::tools::bisect(f_collision, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
+
+    if (perc_move.first<0 || perc_move.second<0) {
+      // reset to start point
+      f_transform(box, f_perc_value(1));
+      return false;
+    }
+
+    double free_perc = f_collision(perc_move.first)<0? perc_move.first : perc_move.second;
+    f_transform(box, f_perc_value(free_perc));
+    return free_perc<1;
+  }
+  template<size_t DIRECTION>
+  bool expand(state_t& s, box_t& box) {
+    assert(false);
+    return false;
+  }
+  template<>
+  bool expand<DOWN>(state_t& s, box_t& box) {
+    point_t start_pnt = box.min_corner();
+
+    auto f_perc_value = [&start_pnt](double p) -> crd_t {return p*start_pnt.y();};
+    auto f_transform = [&start_pnt](box_t& b, crd_t v) {
+                         b = {{b.min_corner().x(), v}, b.max_corner()};
+                       };
+    return expand(s, box, f_perc_value, f_transform);
   }
 }
 
@@ -401,6 +456,7 @@ node_t* split_node(state_t& s, node_t* node, item_t* item) {
 
   // node right
   box_t right = {{x_split, n_min_y}, {n_max_x, y_split}};
+  expand<DOWN>(s, right);
   s.nodes.push_back({ right });
   node->right = &s.nodes.back();
 
@@ -429,7 +485,7 @@ node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
   auto fit_factor = s.compact? 2 : 1;
   // do fit height with fit_factor as compaction might still push it inside
   // do not use fit_factor for width, since non-fits will be skipped, while there might be place up
-  if ((bbdims.w <= rtdims.w) && (bbdims.h <= rtdims.h*fit_factor))
+  if ((bbdims.w <= rtdims.w*fit_factor) && (bbdims.h <= rtdims.h*fit_factor))
     return split_node(s, root, item);
 
   return nullptr;
