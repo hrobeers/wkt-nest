@@ -5,7 +5,7 @@
 #include <boost/geometry/arithmetic/arithmetic.hpp>
 #include <boost/geometry/algorithms/for_each.hpp>
 #include <boost/geometry/algorithms/intersects.hpp>
-#include <boost/geometry/algorithms/intersection.hpp>
+#include <boost/geometry/algorithms/centroid.hpp>
 #include <boost/geometry/algorithms/within.hpp>
 #include <boost/geometry/algorithms/area.hpp>
 namespace bg = boost::geometry;
@@ -210,9 +210,13 @@ namespace {
   }
   template<>
   bool collide<box_t, item_t>(const box_t& i1, const item_t& i2) {
-    box_t inters;
-    bg::intersection(i1, *i2.bbox(), inters);
-    return bg::area(inters)>0;
+    point_t ca, cb;
+    bg::centroid(i1, ca);
+    bg::centroid(*i2.bbox(), cb);
+    auto da = dims(&i1);
+    auto db = dims(i2.bbox());
+    return (std::abs(ca.x() - cb.x()) * 2 < (da.w + db.w)) &&
+           (std::abs(ca.y() - cb.y()) * 2 < (da.h + db.h));
   }
 
   template<typename Geometry>
@@ -421,7 +425,6 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
       bool left = find_free_space<LEFT>(s, item);
       bool down = find_free_space<DOWN|RIGHT>(s, item);
       if (!left && !down)
-        // TODO apparently never reached?
         break;
     }
 
