@@ -6,6 +6,7 @@
 #include <boost/geometry/algorithms/for_each.hpp>
 #include <boost/geometry/algorithms/intersects.hpp>
 #include <boost/geometry/algorithms/centroid.hpp>
+#include <boost/geometry/strategies/cartesian/centroid_bashein_detmer.hpp>
 #include <boost/geometry/algorithms/within.hpp>
 #include <boost/geometry/algorithms/area.hpp>
 namespace bg = boost::geometry;
@@ -14,7 +15,6 @@ namespace bg = boost::geometry;
 #include <boost/math/tools/minima.hpp>
 namespace bm = boost::math;
 typedef bm::policies::policy<bm::policies::evaluation_error<bm::policies::ignore_error>> ignore_eval_err;
-
 
 using namespace wktnest::bbpack;
 using wktnest::matrix_t;
@@ -36,6 +36,8 @@ const matrix_t from_bbpack = {1.0/S,0,0,
 typedef boost::geometry::model::d2::point_xy<crd_t> point_t;
 typedef boost::geometry::model::polygon<point_t> polygon_t;
 typedef boost::geometry::model::box<point_t> box_t;
+
+const bg::strategy::centroid::bashein_detmer<point_t,point_t,crd_t> centroid_strategy;
 
 namespace {
   const boost::uintmax_t MAX_IT = 10;
@@ -179,13 +181,24 @@ namespace {
     }
   }
   void add_flips(std::list<item_t>& items) {
-    bool before = false;
+    bool opp_centr = true;
+    point_t cb, cp;
+
     auto it=items.begin();
     while (it!=items.end()) {
+      // Alternate opp_centr insertion (known to work well for fins)
+
+      const box_t* bbox = it->bbox();
+      const polygon_t* polygon = it->polygon();
+      bg::centroid(*bbox, cb);
+      bg::centroid(*polygon, cp, centroid_strategy);
+      bool insert_before = cp.x()<cb.x();
+      if (opp_centr) insert_before = !insert_before;
+
       item_t flip(it->source());
       flip.init_transform(prod(rotation(M_PI), *it->init_transform()));
-      // Alternate before aft insertion (known to work well for fins)
-      if (before = !before) {
+
+      if (insert_before) {
         items.insert(it, flip);
         it++;
       }
@@ -193,6 +206,7 @@ namespace {
         it++;
         items.insert(it, flip);
       }
+      opp_centr = !opp_centr;
     }
   }
 
