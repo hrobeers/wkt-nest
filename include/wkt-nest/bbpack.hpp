@@ -11,7 +11,7 @@
 
 namespace wktnest {
   // TODO move to own header when reused elsewhere
-  enum SORTING { NONE, HEIGHT };
+  enum SORTING { NONE, HEIGHT, SHUFFLE };
   struct nesting_opts {
     bool bbox = false;
     SORTING sorting = NONE;

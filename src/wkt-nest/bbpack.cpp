@@ -97,6 +97,8 @@ namespace {
     matrix_t _transform;
 
   public:
+    int rand;
+
     item_t(const wktnest::polygon_t* p) :
       _placed(false),
       _init_transform(identity_matrix),
@@ -105,6 +107,8 @@ namespace {
       bg::envelope(*_source,_bbox);
       // initial transform = optimal rotation and move to origin
       init_transform(identity_matrix);
+      // random number for shuffling
+      rand = std::rand();
     }
 
     const wktnest::polygon_t* source() const { return _source; }
@@ -205,18 +209,23 @@ namespace {
     return bg::intersects(g1, g2);
   }
   template<>
+  bool collide<box_t, box_t>(const box_t& i1, const box_t& i2) {
+    // Override box collision to ensure touching does not count as collision
+    point_t ca, cb;
+    bg::centroid(i1, ca);
+    bg::centroid(i2, cb);
+    auto da = dims(&i1);
+    auto db = dims(&i2);
+    return (std::abs(ca.x() - cb.x()) * 2 < (da.w + db.w)) &&
+           (std::abs(ca.y() - cb.y()) * 2 < (da.h + db.h));
+  }
+  template<>
   bool collide<item_t, item_t>(const item_t& i1, const item_t& i2) {
     return collide(*i1.bbox(), *i2.bbox()) && collide(*i1.polygon(), *i2.polygon());
   }
   template<>
   bool collide<box_t, item_t>(const box_t& i1, const item_t& i2) {
-    point_t ca, cb;
-    bg::centroid(i1, ca);
-    bg::centroid(*i2.bbox(), cb);
-    auto da = dims(&i1);
-    auto db = dims(i2.bbox());
-    return (std::abs(ca.x() - cb.x()) * 2 < (da.w + db.w)) &&
-           (std::abs(ca.y() - cb.y()) * 2 < (da.h + db.h));
+    return collide(i1, *i2.bbox()) && collide(i1, *i2.polygon());
   }
 
   template<typename Geometry>
@@ -357,6 +366,8 @@ namespace {
 node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
 
 fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wktnest::polygon_t>& polygons, SORTING sorting, bool compact) {
+  std::srand(std::time(0));
+
   ::box_t lb;
   bg::transform(bin, lb, to_bbpack);
   state_t s = { lb, sorting, compact };
@@ -364,10 +375,17 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
   for (const wktnest::polygon_t& p : polygons)
     create_items(s, p);
 
-  if (s.sorting == SORTING::HEIGHT)
+  switch (s.sorting) {
+  case SORTING::HEIGHT:
     s.items.sort([](const item_t& i1, const item_t& i2){
                    return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
                  });
+    break;
+  case SORTING::SHUFFLE:
+    s.items.sort([](const item_t& i1, const item_t& i2){
+                   return i1.rand < i2.rand;
+                 });
+  }
 
   add_flips(s.items);
 
@@ -483,8 +501,8 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
 
   // node right
   box_t right = {{x_split, n_min_y}, {n_max_x, y_split}};
-  if (s.compact)
-    // TODO For some reason expanding nodes down does not work well for bbox packing
+  if (s.sorting == SORTING::HEIGHT)
+    // Expanding nodes down only improves when sorted by height
     expand<DOWN>(s, right);
   s.nodes.push_back({ right });
   node->right = &s.nodes.back();

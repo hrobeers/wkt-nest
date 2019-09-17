@@ -29,8 +29,8 @@ int main(int argc, char *argv[])
       ("bbox,b",
        "Nest the polygon's bounding boxes instead of the polygon itself.")
       ("sort,s", po::value<std::string>(),
-       "Sorting strategy before packing. Defaults to 'none'.\n"
-       "['none', 'height']");
+       "Sorting strategy before packing. Defaults to 'height'.\n"
+       "['none', 'height', 'shuffle']");
 
 
     //
@@ -80,11 +80,27 @@ int main(int argc, char *argv[])
     if (do_exit) exit(EXIT_SUCCESS);
 
 
-    // Read the cmd arguments to options struct
+    //
+    // Parse the cmd arguments to options struct
+    //
     nesting_opts opts;
+    // simple bbox packing
     opts.bbox = vm.count("bbox");
-    opts.sorting = vm.count("sort") &&
-      vm["sort"].as<std::string>()=="height"? SORTING::HEIGHT : SORTING::NONE;
+    // sorting
+    std::string sorting = vm.count("sort")?
+      vm["sort"].as<std::string>() :
+      "height";
+    switch (sorting.c_str()[0]) {
+    case 'n':
+      opts.sorting = SORTING::NONE;
+      break;
+    case 'h':
+      opts.sorting = SORTING::HEIGHT;
+      break;
+    case 's':
+      opts.sorting = SORTING::SHUFFLE;
+      break;
+    }
 
     //
     // Run the application
