@@ -1,14 +1,10 @@
 #include "wkt-nest/bbpack.hpp"
+#include "wkt-nest/bbpack-geometry.hpp"
 
 #include <algorithm>
 #include <boost/geometry/algorithms/envelope.hpp>
-#include <boost/geometry/arithmetic/arithmetic.hpp>
-#include <boost/geometry/algorithms/for_each.hpp>
-#include <boost/geometry/algorithms/intersects.hpp>
-#include <boost/geometry/algorithms/centroid.hpp>
-#include <boost/geometry/strategies/cartesian/centroid_bashein_detmer.hpp>
 #include <boost/geometry/algorithms/within.hpp>
-#include <boost/geometry/algorithms/area.hpp>
+#include <boost/geometry/algorithms/transform.hpp>
 namespace bg = boost::geometry;
 
 #include <boost/math/tools/roots.hpp>
@@ -17,37 +13,42 @@ namespace bm = boost::math;
 typedef bm::policies::policy<bm::policies::evaluation_error<bm::policies::ignore_error>> ignore_eval_err;
 
 using namespace wktnest::bbpack;
-using wktnest::matrix_t;
-using wktnest::identity_matrix;
+using namespace bbpack::geometry;
 using wktnest::SORTING;
-
-typedef wktnest::N flt_t;
-
-#define S 100000
-typedef int_fast32_t crd_t;
-//typedef flt_t crd_t;
-const matrix_t to_bbpack = {S,0,0,
-                            0,S,0,
-                            0,0,1};
-const matrix_t from_bbpack = {1.0/S,0,0,
-                              0,1.0/S,0,
-                              0,0,1};
-
-typedef boost::geometry::model::d2::point_xy<crd_t> point_t;
-typedef boost::geometry::model::polygon<point_t> polygon_t;
-typedef boost::geometry::model::box<point_t> box_t;
-
-const bg::strategy::centroid::bashein_detmer<point_t,point_t,crd_t> centroid_strategy;
 
 namespace {
   const boost::uintmax_t MAX_IT = 10;
   const std::function<bool(flt_t,flt_t)> stop_condition = [](flt_t a, flt_t b) //{ return false; };
     {return std::abs(std::abs(a)-std::abs(b))<0.01;};
 
-  struct dim_t {
-    crd_t w;
-    crd_t h;
-  };
+  const flt_t S=100000;
+  const matrix_t m_to_bbpack = {S,0,0,
+                              0,S,0,
+                              0,0,1};
+  const matrix_t m_from_bbpack = {1.0/S,0,0,
+                                0,1.0/S,0,
+                                0,0,1};
+
+  polygon_t to_bbpack(const wktnest::polygon_t& p, const matrix_t& t) {
+    polygon_t result;
+    bg::transform(p, result, matrix_t(t.matrix() * m_to_bbpack.matrix()));
+    return result;
+  }
+  box_t to_bbpack(const wktnest::box_t& b) {
+    box_t result;
+    bg::transform(b, result, m_to_bbpack);
+    return result;
+  }
+  wktnest::polygon_t from_bbpack(const polygon_t& p) {
+    wktnest::polygon_t result;
+    bg::transform(p, result, m_from_bbpack);
+    return result;
+  }
+  wktnest::box_t from_bbpack(const box_t& b) {
+    wktnest::box_t result;
+    bg::transform(b, result, m_from_bbpack);
+    return result;
+  }
 
   dim_t dims(const box_t* b) {
     crd_t min_x = bg::get<bg::min_corner, 0>(*b);
@@ -59,12 +60,6 @@ namespace {
 
   matrix_t prod(const matrix_t& m1, const matrix_t& m2) {
     return m1.matrix() * m2.matrix();
-  }
-
-  polygon_t transform(const wktnest::polygon_t& p, const matrix_t& t) {
-    polygon_t result;
-    bg::transform(p, result, matrix_t(t.matrix() * to_bbpack.matrix()));
-    return result;
   }
 
   matrix_t translation(double x, double y) {
@@ -129,7 +124,7 @@ namespace {
       _transform = prod(t, _transform);
 
       // Apply transformation to source polygon
-      _polygon = ::transform(*_source, _transform);
+      _polygon = to_bbpack(*_source, _transform);
       bg::envelope(_polygon,_bbox);
     }
     void absolute_transform(const matrix_t& t) {
@@ -167,7 +162,7 @@ namespace {
     item_t i(&p);
     auto f_area = [&](double angle) {
                     i.absolute_transform(rotation(angle));
-                    return bg::area(*i.bbox());
+                    return area(*i.bbox());
                   };
     boost::uintmax_t max_iter = MAX_IT;
     auto min = bm::tools::brent_find_minima(f_area, M_PI/8, M_PI*3/8, 4, max_iter);
@@ -190,8 +185,8 @@ namespace {
 
       const box_t* bbox = it->bbox();
       const polygon_t* polygon = it->polygon();
-      bg::centroid(*bbox, cb);
-      bg::centroid(*polygon, cp, centroid_strategy);
+      centroid(*bbox, cb);
+      centroid(*polygon, cp);
       bool insert_before = cp.x()<cb.x();
       if (opp_centr) insert_before = !insert_before;
 
@@ -220,14 +215,14 @@ namespace {
   }
   template<typename Geometry1, typename Geometry2>
   bool collide(const Geometry1& g1, const Geometry2& g2) {
-    return bg::intersects(g1, g2);
+    return intersects(g1, g2);
   }
   template<>
   bool collide<box_t, box_t>(const box_t& i1, const box_t& i2) {
     // Override box collision to ensure touching does not count as collision
     point_t ca, cb;
-    bg::centroid(i1, ca);
-    bg::centroid(i2, cb);
+    centroid(i1, ca);
+    centroid(i2, cb);
     auto da = dims(&i1);
     auto db = dims(&i2);
     return (std::abs(ca.x() - cb.x()) * 2 < (da.w + db.w)) &&
@@ -382,9 +377,7 @@ node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
 fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wktnest::polygon_t>& polygons, SORTING sorting, bool compact) {
   std::srand(std::time(0));
 
-  ::box_t lb;
-  bg::transform(bin, lb, to_bbpack);
-  state_t s = { lb, sorting, compact };
+  state_t s = { to_bbpack(bin), sorting, compact };
 
   for (const wktnest::polygon_t& p : polygons)
     create_items(s, p);
@@ -420,11 +413,7 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
                    if (!s.fits[&p])
                      return {0};
                    item_t* item = s.fits[&p];
-                   wktnest::polygon_t rp;
-                   wktnest::box_t rb;
-                   bg::transform(*item->polygon(), rp, from_bbpack);
-                   bg::transform(*item->bbox(), rb, from_bbpack);
-                   return {1,rp,rb,*item->transform()};
+                   return {1,from_bbpack(*item->polygon()),from_bbpack(*item->bbox()),*item->transform()};
                  });
 
   return result;
