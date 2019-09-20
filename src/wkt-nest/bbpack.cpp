@@ -294,20 +294,19 @@ namespace {
   };
   std::pair<double, double> bracket_solution(const std::function<double(double)>& f_collision) {
     std::pair<double,double> bracket = {0,1};
-    /* TODO make bracketing optional
-    for (double d=0.0001; d<1; d=d+0.05) {
+    for (double d=0.0001; d<1; d=d+0.1) {
       if (std::signbit(f_collision(d))) {
         bracket.second = d;
         break;
       }
       bracket.first = d;
     }
-    */
     return bracket;
   }
   bool find_free_space(state_t& s, item_t* item,
                        const std::function<double(double)>& f_perc_value,
-                       const std::function<matrix_t(double)>& f_transform) {
+                       const std::function<matrix_t(double)>& f_transform,
+                       bool bracket=false) {
     matrix_t initial_transform = *item->transform();
     // Move to left until collision
     auto f_collision = [&](double perc) -> double {
@@ -317,10 +316,10 @@ namespace {
                          return can_claim_space(*item, s)? -1*perc : 1*perc;
                        };
 
-    std::pair<double, double> bracket = bracket_solution(f_collision);
+    std::pair<double, double> range = bracket? bracket_solution(f_collision) : std::pair<double, double>(0,1);
 
     boost::uintmax_t max_it = MAX_IT;
-    std::pair<double,double> perc_move = bm::tools::bisect(f_collision, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
+    std::pair<double,double> perc_move = bm::tools::bisect(f_collision, range.first, range.second, stop_condition, max_it, ignore_eval_err());
 
     if (perc_move.first<0 || perc_move.second<0) {
       // reset to start point
@@ -333,33 +332,33 @@ namespace {
     return free_perc<1;
   }
   template<size_t DIRECTION>
-  bool find_free_space(state_t& s, item_t* item) {
+  bool find_free_space(state_t& s, item_t* item, bool bracket=false) {
     assert(false);
     return false;
   }
   template<>
-  bool find_free_space<LEFT>(state_t& s, item_t* item) {
+  bool find_free_space<LEFT>(state_t& s, item_t* item, bool bracket) {
     point_t start_pnt = item->bbox()->min_corner();
 
     auto f_perc_value = [&start_pnt](double p) -> crd_t {return p*start_pnt.x();};
     auto f_transform = [&start_pnt](crd_t v){return translation(v,start_pnt.y());};
-    return find_free_space(s, item, f_perc_value, f_transform);
+    return find_free_space(s, item, f_perc_value, f_transform, bracket);
   }
   template<>
-  bool find_free_space<DOWN>(state_t& s, item_t* item) {
+  bool find_free_space<DOWN>(state_t& s, item_t* item, bool bracket) {
     point_t start_pnt = item->bbox()->min_corner();
 
     auto f_perc_value = [&start_pnt](double p) -> crd_t {return p*start_pnt.y();};
     auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x(),v);};
-    return find_free_space(s, item, f_perc_value, f_transform);
+    return find_free_space(s, item, f_perc_value, f_transform, bracket);
   }
   template<>
-  bool find_free_space<DOWN|RIGHT>(state_t& s, item_t* item) {
+  bool find_free_space<DOWN|RIGHT>(state_t& s, item_t* item, bool bracket) {
     point_t start_pnt = item->bbox()->min_corner();
 
     auto f_perc_value = [&start_pnt](double p) -> crd_t {return start_pnt.y()-(p*start_pnt.y());};
     auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x()+(v/2),start_pnt.y()-v);};
-    return find_free_space(s, item, f_perc_value, f_transform);
+    return find_free_space(s, item, f_perc_value, f_transform, bracket);
   }
 
   // TODO combine with find_free_space?
@@ -373,10 +372,10 @@ namespace {
                          return can_claim_space(box, s)? -1*perc : 1*perc;
                        };
 
-    std::pair<double, double> bracket = bracket_solution(f_collision);
+    std::pair<double, double> range = {0,1};
 
     boost::uintmax_t max_it = MAX_IT;
-    std::pair<double,double> perc_move = bm::tools::bisect(f_collision, bracket.first, bracket.second, stop_condition, max_it, ignore_eval_err());
+    std::pair<double,double> perc_move = bm::tools::bisect(f_collision, range.first, range.second, stop_condition, max_it, ignore_eval_err());
 
     if (perc_move.first<0 || perc_move.second<0) {
       // reset to start point
@@ -479,8 +478,9 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
     }
 
     // Find free space
-    // First push down
-    find_free_space<DOWN>(s, item);
+    // First push left & down using bracketing
+    find_free_space<LEFT>(s, item, true);
+    find_free_space<DOWN>(s, item, true);
     // Then iterate zigzag (LEFT & DOWN|RIGHT)
     for (size_t i=0; i<MAX_IT; i++) {
       bool left = find_free_space<LEFT>(s, item);
@@ -489,19 +489,9 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
         break;
     }
 
-    if (!can_claim_space(*item,s)) {
-      // let's do a last desperate search on top left
-      if (!artificial) {
-        auto id = dims(item->bbox());
-        // Artificial top left node
-        node_t artificial_node = { {{0,n_max_y-id.h},{n_max_x, n_max_y}} };
-        if (split_node(s, &artificial_node, item, true))
-          return true;
-      }
-
+    if (!can_claim_space(*item,s))
       // Bail out when we failed to find free space
       return false;
-    }
   }
 
   node->used = true;
