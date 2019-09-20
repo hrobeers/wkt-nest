@@ -21,7 +21,6 @@ namespace wktnest {
     struct placement {
       size_t bin= 0;
       polygon_t polygon;
-      box_t bbox;
       matrix_t transform;
     };
     typedef std::vector<placement> fit_result;

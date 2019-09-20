@@ -2,6 +2,7 @@
 #include "wkt-nest/bbpack-geometry.hpp"
 
 #include <algorithm>
+#include <boost/math/special_functions/pow.hpp>
 #include <boost/geometry/algorithms/envelope.hpp>
 #include <boost/geometry/algorithms/within.hpp>
 #include <boost/geometry/algorithms/transform.hpp>
@@ -21,33 +22,45 @@ namespace {
   const std::function<bool(flt_t,flt_t)> stop_condition = [](flt_t a, flt_t b) //{ return false; };
     {return std::abs(std::abs(a)-std::abs(b))<0.01;};
 
-  const flt_t S=100000;
+  const flt_t S=bm::pow<16>(2);
   const matrix_t m_to_bbpack = {S,0,0,
                               0,S,0,
                               0,0,1};
-  const matrix_t m_from_bbpack = {1.0/S,0,0,
-                                0,1.0/S,0,
-                                0,0,1};
 
-  polygon_t to_bbpack(const wktnest::polygon_t& p, const matrix_t& t) {
+  template<typename T>
+  typename std::enable_if<std::negation<std::is_same<T, polygon_t>>::value, polygon_t>::type
+  to_bbpack(const T& p, const matrix_t& t) {
     polygon_t result;
     bg::transform(p, result, matrix_t(t.matrix() * m_to_bbpack.matrix()));
     return result;
   }
-  box_t to_bbpack(const wktnest::box_t& b) {
+  template<typename T>
+  typename std::enable_if<std::negation<std::is_same<T, box_t>>::value, box_t>::type
+  to_bbpack(const T& b) {
     box_t result;
     bg::transform(b, result, m_to_bbpack);
     return result;
   }
-  wktnest::polygon_t from_bbpack(const polygon_t& p) {
-    wktnest::polygon_t result;
-    bg::transform(p, result, m_from_bbpack);
+  polygon_t to_bbpack(const polygon_t& p, const matrix_t& t) {
+    polygon_t result;
+    bg::transform(p, result, t);
     return result;
   }
-  wktnest::box_t from_bbpack(const box_t& b) {
-    wktnest::box_t result;
-    bg::transform(b, result, m_from_bbpack);
-    return result;
+  box_t to_bbpack(const box_t& b) {
+    return b;
+  }
+  template<typename T>
+  typename std::enable_if<std::negation<std::is_same<flt_t, crd_t>>::value, T>::type
+  from_bbpack(const T& m) {
+    auto t = m.matrix();
+    t.a[0][2] /= S;
+    t.a[1][2] /= S;
+    return t;
+  }
+  template<typename T>
+  typename std::enable_if<std::is_same<flt_t, crd_t>::value, T>::type
+  from_bbpack(const T& m) {
+    return m;
   }
 
   dim_t dims(const box_t* b) {
@@ -413,7 +426,12 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
                    if (!s.fits[&p])
                      return {0};
                    item_t* item = s.fits[&p];
-                   return {1,from_bbpack(*item->polygon()),from_bbpack(*item->bbox()),*item->transform()};
+                   matrix_t t = from_bbpack(*item->transform());
+                   wktnest::polygon_t rp;
+                   bg::transform(*item->source(), rp, t);
+                   return {1,
+                           rp,
+                           t};
                  });
 
   return result;

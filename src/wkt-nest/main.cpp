@@ -122,16 +122,17 @@ int main(int argc, char *argv[])
 
       // Add geometries such that all these geometries fit on the map
       mapper.add(*b);
+      /*
       for (auto item : fit)
         if (item.bin)
           mapper.add(item.bbox);
-
+      */
       mapper.map(*b, "fill-opacity:0.5;fill:rgb(153,204,0);stroke:rgb(153,204,0);stroke-width:2", 5);
-      //for (auto p : ps)
+
       for (auto item : fit)
         if (item.bin) {
           // Draw the geometries on the SVG map, using a specific SVG style
-          mapper.map(item.bbox, "fill-opacity:0.2;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:1");
+          //mapper.map(item.bbox, "fill-opacity:0.2;fill:rgb(51,51,153);stroke:rgb(51,51,153);stroke-width:1");
           mapper.map(item.polygon, "fill-opacity:0.3;fill:rgb(212,0,0);stroke:rgb(212,0,0);stroke-width:2");
         }
 
