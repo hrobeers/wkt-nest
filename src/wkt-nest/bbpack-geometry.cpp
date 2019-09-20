@@ -1,10 +1,7 @@
 #include "wkt-nest/bbpack-geometry.hpp"
 
-#include <boost/geometry/algorithms/intersects.hpp>
-#include <boost/geometry/algorithms/centroid.hpp>
-#include <boost/geometry/strategies/cartesian/centroid_bashein_detmer.hpp>
-#include <boost/geometry/algorithms/within.hpp>
-#include <boost/geometry/algorithms/area.hpp>
+#include <boost/geometry.hpp>
+
 namespace bg = boost::geometry;
 
 using namespace bbpack::geometry;
@@ -29,4 +26,23 @@ bool bbpack::geometry::intersects(const box_t& i1, const polygon_t& i2) {
 }
 bool bbpack::geometry::intersects(const polygon_t& i1, const polygon_t& i2) {
   return bg::intersects(i1, i2);
+}
+
+polygon_t bbpack::geometry::buffer(const polygon_t& p, crd_t buffer_distance) {
+  if (buffer_distance==0)
+    return p;
+
+  bg::model::multi_polygon<polygon_t> mpol;
+  // Declare strategies
+  const int points_per_circle = 8;
+  bg::strategy::buffer::distance_symmetric<crd_t> distance(buffer_distance);
+  boost::geometry::strategy::buffer::join_round join(points_per_circle);
+  //boost::geometry::strategy::buffer::join_miter join;
+  boost::geometry::strategy::buffer::end_flat end;
+  boost::geometry::strategy::buffer::point_circle circle(points_per_circle);
+  boost::geometry::strategy::buffer::side_straight side;
+  bg::buffer(p, mpol, distance, side, join, end, circle);
+  polygon_t r;
+  bg::convert(mpol[0].outer(), r);
+  return r;
 }

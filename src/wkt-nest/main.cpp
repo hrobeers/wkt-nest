@@ -28,6 +28,8 @@ int main(int argc, char *argv[])
     nesting_params.add_options()
       ("bbox,b",
        "Nest the polygon's bounding boxes instead of the polygon itself.")
+      ("distance,d", po::value<double>(),
+       "Minimum distance to keep between the items.")
       ("sort,s", po::value<std::string>(),
        "Sorting strategy before packing. Defaults to 'height'.\n"
        "['none', 'height', 'shuffle']");
@@ -86,6 +88,9 @@ int main(int argc, char *argv[])
     nesting_opts opts;
     // simple bbox packing
     opts.bbox = vm.count("bbox");
+    // distance
+    opts.distance = vm.count("distance")?
+      vm["distance"].as<double>() : 0;
     // sorting
     std::string sorting = vm.count("sort")?
       vm["sort"].as<std::string>() :

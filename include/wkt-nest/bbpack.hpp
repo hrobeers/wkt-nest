@@ -14,6 +14,7 @@ namespace wktnest {
   enum SORTING { NONE, HEIGHT, SHUFFLE };
   struct nesting_opts {
     bool bbox = false;
+    double distance = 0;
     SORTING sorting = NONE;
   };
 
@@ -25,11 +26,11 @@ namespace wktnest {
     };
     typedef std::vector<placement> fit_result;
 
-    fit_result fit(const box_t& bin, const std::vector<polygon_t>& polygons, SORTING sorting, bool compact);
+    fit_result fit(const box_t& bin, const std::vector<polygon_t>& polygons, double distance, SORTING sorting, bool compact);
 
     template<typename T_opts>
     fit_result fit(const box_t& bin, const std::vector<polygon_t>& polygons, const T_opts& opts) {
-      return fit(bin, polygons, opts.sorting, !opts.bbox);
+      return fit(bin, polygons, opts.distance, opts.sorting, !opts.bbox);
     }
   }
 }

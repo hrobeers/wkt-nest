@@ -99,7 +99,9 @@ namespace {
 
   class item_t {
     bool _placed;
+    double _buffer_distance;
     const wktnest::polygon_t* _source;
+    polygon_t _buffered;
     matrix_t _init_transform;
 
     polygon_t _polygon;
@@ -109,17 +111,38 @@ namespace {
   public:
     int rand;
 
-    item_t(const wktnest::polygon_t* p) :
-      _placed(false),
+    // Only allow moving, no copying
+    item_t(item_t&&) = default;
+    item_t() = delete;
+    void operator=(item_t const &x) = delete;
+
+    item_t(const wktnest::polygon_t* p, flt_t buffer_distance) :
+      _placed(false), _buffer_distance(buffer_distance),
       _init_transform(identity_matrix),
       _transform(identity_matrix),
-      _source(p) {
-      bg::envelope(*_source,_bbox);
+      _source(p)
+    {
+      _buffered = buffer(to_bbpack(*_source, _transform), buffer_distance*S);
       // initial transform = optimal rotation and move to origin
       init_transform(identity_matrix);
       // random number for shuffling
       rand = std::rand();
     }
+
+  private:
+    item_t(const item_t& other) :
+      _placed(false), _buffer_distance(other._buffer_distance),
+      _init_transform(identity_matrix),
+      _transform(identity_matrix),
+      _source(other._source), _buffered(other._buffered)
+      {
+        // initial transform = optimal rotation and move to origin
+        init_transform(identity_matrix);
+        // random number for shuffling
+        rand = std::rand();
+      }
+  public:
+    item_t clone() { return item_t(*this); }
 
     const wktnest::polygon_t* source() const { return _source; }
     const polygon_t* polygon() const { return &_polygon; }
@@ -136,8 +159,8 @@ namespace {
     void relative_transform(const matrix_t& t) {
       _transform = prod(t, _transform);
 
-      // Apply transformation to source polygon
-      _polygon = to_bbpack(*_source, _transform);
+      // Apply transformation to buffered polygon
+      _polygon = to_bbpack(_buffered, _transform);
       bg::envelope(_polygon,_bbox);
     }
     void absolute_transform(const matrix_t& t) {
@@ -171,8 +194,8 @@ namespace {
   };
 
   const std::vector<double> rotations = {M_PI/2};
-  void create_items(state_t& s, const wktnest::polygon_t& p) {
-    item_t i(&p);
+  void create_items(state_t& s, const wktnest::polygon_t& p, double buffer_distance) {
+    item_t i(&p, buffer_distance);
     auto f_area = [&](double angle) {
                     i.absolute_transform(rotation(angle));
                     return area(*i.bbox());
@@ -180,12 +203,12 @@ namespace {
     boost::uintmax_t max_iter = MAX_IT;
     auto min = bm::tools::brent_find_minima(f_area, M_PI/8, M_PI*3/8, 4, max_iter);
     i.init_transform(rotation(min.first));
-    s.items.push_back(i);
+    s.items.push_back(std::move(i));
 
     for (double r : rotations) {
-      item_t ir(&p);
+      item_t ir(&p, buffer_distance);
       ir.init_transform(rotation(min.first+r));
-      s.items.push_back(ir);
+      s.items.push_back(std::move(ir));
     }
   }
   void add_flips(std::list<item_t>& items) {
@@ -203,16 +226,16 @@ namespace {
       bool insert_before = cp.x()<cb.x();
       if (opp_centr) insert_before = !insert_before;
 
-      item_t flip(it->source());
+      item_t flip = it->clone();
       flip.init_transform(prod(rotation(M_PI), *it->init_transform()));
 
       if (insert_before) {
-        items.insert(it, flip);
+        items.insert(it, std::move(flip));
         it++;
       }
       else {
         it++;
-        items.insert(it, flip);
+        items.insert(it, std::move(flip));
       }
       opp_centr = !opp_centr;
     }
@@ -387,13 +410,13 @@ namespace {
 
 node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
 
-fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wktnest::polygon_t>& polygons, SORTING sorting, bool compact) {
+fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wktnest::polygon_t>& polygons, double distance, SORTING sorting, bool compact) {
   std::srand(std::time(0));
 
   state_t s = { to_bbpack(bin), sorting, compact };
 
   for (const wktnest::polygon_t& p : polygons)
-    create_items(s, p);
+    create_items(s, p, distance/2);
 
   switch (s.sorting) {
   case SORTING::HEIGHT:

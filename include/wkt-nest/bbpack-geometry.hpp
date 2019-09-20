@@ -31,6 +31,8 @@ namespace bbpack { namespace geometry {
     bool intersects(const box_t& i1, const box_t& i2);
     bool intersects(const box_t& i1, const polygon_t& i2);
     bool intersects(const polygon_t& i1, const polygon_t& i2);
+
+    polygon_t buffer(const polygon_t& p, crd_t buffer_distance);
 }}
 
 #endif //BBPACK_GEOMETRY_HPP
