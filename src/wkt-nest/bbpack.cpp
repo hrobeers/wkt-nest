@@ -22,9 +22,19 @@ namespace {
   const std::function<bool(flt_t,flt_t)> stop_condition = [](flt_t a, flt_t b) //{ return false; };
     {return std::abs(std::abs(a)-std::abs(b))<0.01;};
 
-  const flt_t S=bm::pow<16>(2);
-  const matrix_t m_to_bbpack = {S,0,0,
-                              0,S,0,
+  template<typename T>
+  struct S
+  {
+    static constexpr flt_t value = 65536;// bm::pow<16>(2);
+  };
+  template<>
+  struct S<flt_t>
+  {
+    static constexpr flt_t value = 1;
+  };
+
+  const matrix_t m_to_bbpack = {S<crd_t>::value,0,0,
+                              0,S<crd_t>::value,0,
                               0,0,1};
 
   template<typename T>
@@ -53,8 +63,8 @@ namespace {
   typename std::enable_if<std::negation<std::is_same<flt_t, crd_t>>::value, T>::type
   from_bbpack(const T& m) {
     auto t = m.matrix();
-    t.a[0][2] /= S;
-    t.a[1][2] /= S;
+    t.a[0][2] /= S<crd_t>::value;
+    t.a[1][2] /= S<crd_t>::value;
     return t;
   }
   template<typename T>
@@ -99,7 +109,6 @@ namespace {
 
   class item_t {
     bool _placed;
-    double _buffer_distance;
     const wktnest::polygon_t* _source;
     polygon_t _buffered;
     matrix_t _init_transform;
@@ -117,12 +126,12 @@ namespace {
     void operator=(item_t const &x) = delete;
 
     item_t(const wktnest::polygon_t* p, flt_t buffer_distance) :
-      _placed(false), _buffer_distance(buffer_distance),
+      _placed(false),
       _init_transform(identity_matrix),
       _transform(identity_matrix),
       _source(p)
     {
-      _buffered = buffer(to_bbpack(*_source, _transform), buffer_distance*S);
+      _buffered = buffer(to_bbpack(*_source, _transform), buffer_distance);
       // initial transform = optimal rotation and move to origin
       init_transform(identity_matrix);
       // random number for shuffling
@@ -131,7 +140,7 @@ namespace {
 
   private:
     item_t(const item_t& other) :
-      _placed(false), _buffer_distance(other._buffer_distance),
+      _placed(false),
       _init_transform(identity_matrix),
       _transform(identity_matrix),
       _source(other._source), _buffered(other._buffered)
@@ -177,6 +186,7 @@ namespace {
 
   struct state_t {
     box_t bin;
+    double buffer_distance;
     SORTING sorting;
     bool compact;
     std::list<item_t> items;
@@ -194,8 +204,8 @@ namespace {
   };
 
   const std::vector<double> rotations = {M_PI/2};
-  void create_items(state_t& s, const wktnest::polygon_t& p, double buffer_distance) {
-    item_t i(&p, buffer_distance);
+  void create_items(state_t& s, const wktnest::polygon_t& p) {
+    item_t i(&p, s.buffer_distance);
     auto f_area = [&](double angle) {
                     i.absolute_transform(rotation(angle));
                     return area(*i.bbox());
@@ -206,7 +216,7 @@ namespace {
     s.items.push_back(std::move(i));
 
     for (double r : rotations) {
-      item_t ir(&p, buffer_distance);
+      item_t ir(&p, s.buffer_distance);
       ir.init_transform(rotation(min.first+r));
       s.items.push_back(std::move(ir));
     }
@@ -413,10 +423,10 @@ node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
 fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wktnest::polygon_t>& polygons, double distance, SORTING sorting, bool compact) {
   std::srand(std::time(0));
 
-  state_t s = { to_bbpack(bin), sorting, compact };
+  state_t s = { to_bbpack(bin), distance*S<crd_t>::value/2, sorting, compact };
 
   for (const wktnest::polygon_t& p : polygons)
-    create_items(s, p, distance/2);
+    create_items(s, p);
 
   switch (s.sorting) {
   case SORTING::HEIGHT:
