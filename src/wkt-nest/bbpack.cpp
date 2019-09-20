@@ -59,19 +59,6 @@ namespace {
   box_t to_bbpack(const box_t& b) {
     return b;
   }
-  template<typename T>
-  typename std::enable_if<std::negation<std::is_same<flt_t, crd_t>>::value, T>::type
-  from_bbpack(const T& m) {
-    auto t = m.matrix();
-    t.a[0][2] /= S<crd_t>::value;
-    t.a[1][2] /= S<crd_t>::value;
-    return t;
-  }
-  template<typename T>
-  typename std::enable_if<std::is_same<flt_t, crd_t>::value, T>::type
-  from_bbpack(const T& m) {
-    return m;
-  }
 
   dim_t dims(const box_t* b) {
     crd_t min_x = bg::get<bg::min_corner, 0>(*b);
@@ -459,9 +446,11 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
                    if (!s.fits[&p])
                      return {0};
                    item_t* item = s.fits[&p];
-                   matrix_t t = from_bbpack(*item->transform());
+                   auto t = item->transform()->matrix();
+                   t.a[0][2] /= S<crd_t>::value;
+                   t.a[1][2] /= S<crd_t>::value;
                    wktnest::polygon_t rp;
-                   bg::transform(*item->source(), rp, t);
+                   bg::transform(*item->source(), rp, matrix_t(t));
                    return {1,
                            rp,
                            t};
