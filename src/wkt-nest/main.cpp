@@ -1,8 +1,6 @@
 #include <cstdlib>
 #include <string>
 #include <iostream>
-#include <boost/program_options.hpp>
-namespace po = boost::program_options;
 
 #include "../version_autogen.hpp"
 
@@ -12,15 +10,24 @@ namespace po = boost::program_options;
 
 using namespace wktnest;
 
+#ifndef __EMSCRIPTEN__
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+
 inline void showHelp(const po::options_description &cmdline_options, std::ostream &stream = std::cout)
 {
     stream << cmdline_options << "\n";
 }
+#endif
 
 int main(int argc, char *argv[])
 {
   try
   {
+    nesting_opts opts;
+    opts.sorting = SORTING::HEIGHT;
+
+#ifndef __EMSCRIPTEN__
     //
     // WKT-nest options
     //
@@ -85,7 +92,6 @@ int main(int argc, char *argv[])
     //
     // Parse the cmd arguments to options struct
     //
-    nesting_opts opts;
     // simple bbox packing
     opts.bbox = vm.count("bbox");
     // distance
@@ -106,12 +112,12 @@ int main(int argc, char *argv[])
       opts.sorting = SORTING::SHUFFLE;
       break;
     }
+#endif
 
     //
     // Run the application
     //
 
-    if (true)
     {
       std::optional<box_t> b = read_box(std::cin);
       if (!b) {
@@ -143,10 +149,6 @@ int main(int argc, char *argv[])
 
       // Destructor of map will be called - adding </svg>
       // Destructor of stream will be called, closing the file
-    }
-    else
-    {
-      showHelp(cmdline_options, std::cerr);
     }
 
     exit(EXIT_SUCCESS);
