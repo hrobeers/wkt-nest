@@ -2,24 +2,28 @@
 
 #include <cstdlib>
 #include <string>
-#include <sstream>
 
 #include <boost/geometry/io/svg/svg_mapper.hpp>
 #include "wkt-nest/wktio.hpp"
 #include "wkt-nest/bbpack.hpp"
+
+#include <boost/iostreams/device/array.hpp>
+#include <boost/iostreams/stream_buffer.hpp>
+namespace bio = boost::iostreams;
 
 using namespace wktnest;
 
 const size_t r_size = 1048576; // 1MiB
 char result[r_size];
 
-extern "C" char* EMSCRIPTEN_KEEPALIVE nest(char* p)
+extern "C" char* EMSCRIPTEN_KEEPALIVE nest(const char* p)
 {
   try {
     nesting_opts opts;
     opts.sorting = SORTING::HEIGHT;
 
-    std::stringstream in(p);
+    bio::stream_buffer<bio::array_source> sbuf(p, strlen(p));
+    std::istream in(&sbuf);
 
     std::optional<box_t> b = read_box(in);
     if (!b) {
@@ -30,7 +34,8 @@ extern "C" char* EMSCRIPTEN_KEEPALIVE nest(char* p)
 
     auto fit = bbpack::fit(*b, ps, opts);
 
-    std::stringstream out;
+    bio::stream_buffer<bio::array_sink> obuf(result, r_size);
+    std::ostream out(&obuf);
     {
       // Declare a stream and an SVG mapper
       boost::geometry::svg_mapper<point_t> mapper(out, 400, 400);
@@ -55,7 +60,9 @@ extern "C" char* EMSCRIPTEN_KEEPALIVE nest(char* p)
       // Destructor of stream will be called, closing the file
     }
 
-    return strncpy(result, out.str().c_str(), r_size);
+    // put null byte for safety (seems to work without)
+    out.put(0);
+    return &result[0];
   }
   catch (std::exception &ex)
   {
