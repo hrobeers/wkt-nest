@@ -20,7 +20,7 @@ main: main.o $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -s EXIT_RUNTIME=1 -o wkt-nest.js $(OBJECTS)
 
 exports: wasm-exports.o $(OBJECTS)
-	$(CXX) $(CXXFLAGS) -s EXPORTED_FUNCTIONS="['_nest']" -s 'EXTRA_EXPORTED_RUNTIME_METHODS=["cwrap"]' -o wkt-nest-exports.js wasm-exports.o $(OBJECTS)
+	$(CXX) $(CXXFLAGS) -s EXPORTED_FUNCTIONS="['_nest']" -s 'EXTRA_EXPORTED_RUNTIME_METHODS=["cwrap"]' -s MODULARIZE_INSTANCE=1 -s EXPORT_ES6=1 -o wkt-nest-exports.js wasm-exports.o $(OBJECTS)
 
 .PHONY: clean
 clean:

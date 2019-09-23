@@ -3,13 +3,13 @@
 <div id="output-container">
 </div>
 
-<script>
- var Module = {
-   onRuntimeInitialized: function() {
-     window.nest = Module.cwrap("nest", "string", ["string"]);
-     run_nest();
-   },
- };
+<script type="module">
+ import Module from './wkt-nest-exports.js';
+
+ Module.onRuntimeInitialized = () => {
+   window.nest = Module.cwrap("nest", "string", ["string"]);
+   run_nest();
+ }
 
  function run_nest() {
    let c = document.getElementById("output-container");
@@ -25,5 +25,6 @@
      c.children[i].remove();
    c.appendChild(svgNode.documentElement);
  }
+
+ window.run_nest = run_nest;
 </script>
-<script async src=wkt-nest-exports.js></script>
