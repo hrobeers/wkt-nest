@@ -540,9 +540,12 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
 
   // node right
   box_t right = {{x_split, n_min_y}, {n_max_x, y_split}};
+  /*
+   * TODO Expansion still needed?
   if (s.sorting == SORTING::HEIGHT)
     // Expanding nodes down only improves when sorted by height
     expand<DOWN>(s, right);
+  */
   s.nodes.push_back({ right });
   node->right = &s.nodes.back();
 
@@ -551,16 +554,24 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
 
 node_t* grow_up(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
   auto bin_limit = s.bin.max_corner();
+
+  // Do not create a node on top of the top node
   if (root->box.max_corner().y() >= bin_limit.y())
     return nullptr;
 
-  s.nodes.push_back({
-    {{0,
-      s.union_box.max_corner().y()},
-     {bin_limit.x(),
-      std::min(bin_limit.y(),
-               s.union_box.max_corner().y()+dims(item->bbox()).h)}
-    }});
+  crd_t item_height = dims(item->bbox()).h;
+  crd_t bot = s.union_box.max_corner().y();
+  crd_t top = bot + item_height;
+
+  if (top > bin_limit.y()) {
+    // The top node should be fully inside the bin
+    // to ensure that a valid search is performed
+    top = bin_limit.y();
+    bot = top - item_height;
+  }
+
+  s.nodes.push_back({ {{0, bot},
+                       {bin_limit.x(), top} }});
   node_t* up = &s.nodes.back();
   root->up = up;
 
