@@ -33,6 +33,14 @@ namespace bbpack { namespace geometry {
     bool intersects(const polygon_t& i1, const polygon_t& i2);
 
     polygon_t buffer(const polygon_t& p, crd_t buffer_distance);
+
+    inline
+    box_t union_(const box_t& b1, const box_t& b2) {
+      return {{std::min(b1.min_corner().x(),b2.min_corner().x()),
+               std::min(b1.min_corner().y(),b2.min_corner().y()),},
+              {std::max(b1.max_corner().x(),b2.max_corner().x()),
+               std::max(b1.max_corner().y(),b2.max_corner().y()),}};
+    }
 }}
 
 #endif //BBPACK_GEOMETRY_HPP

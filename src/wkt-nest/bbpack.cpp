@@ -179,6 +179,7 @@ namespace {
     std::list<item_t> items;
     std::map<const wktnest::polygon_t*, item_t*> fits;
     std::map<const item_t*, size_t> item_to_bin_idx;
+    box_t union_box;
 
     // TODO below still needed?
 
@@ -402,6 +403,13 @@ namespace {
                        };
     return expand(s, box, f_perc_value, f_transform);
   }
+
+  inline
+  bool can_grow_up(node_t* node) {
+    if (node->up && node->up->used)
+      return false;
+    return node->box.min_corner().x() == 0;
+  }
 }
 
 node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth=0);
@@ -429,7 +437,8 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
   add_flips(s.items);
 
   // construct root
-  s.nodes.push_back({s.bin});
+  auto id = dims(s.items.front().bbox());
+  s.nodes.push_back({ {{0,0},{s.bin.max_corner().x(),id.h}} });
   node_t* root = &s.nodes.back();
 
   for (item_t& item : s.items)
@@ -496,6 +505,7 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
 
   node->used = true;
   item->placed(true);
+  s.union_box = union_(s.union_box, *item->bbox());
 
   /*
   // if bbox outside node, free up full node
@@ -510,27 +520,23 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
   }
   */
 
-  /* Splitting on bbox is more robust when having many equal sized objects
-   * A small downwards move of an element can make the entire row unusable
+  /*
   crd_t x_split = std::max(n_min_x, std::min(std::ceil(item->bbox()->max_corner().x()), n_max_x));
   crd_t y_split = std::max(n_min_y, std::min(std::ceil(item->bbox()->max_corner().y()), n_max_y));
-  */
   crd_t x_split = std::max(n_min_x, std::min(item->bbox()->max_corner().x(), n_max_x));
   crd_t y_split = std::max(n_min_y, std::min(item->bbox()->max_corner().y(), n_max_y));
+  */
 
-  /*
   crd_t x_split = std::ceil(n_min_x + dims(item->bbox()).w);
   crd_t y_split = std::ceil(n_min_y + dims(item->bbox()).h);
 
-  auto item_box = item->bbox();
-  crd_t x_split = item_box->max_corner().x();
-  crd_t y_split = item_box->max_corner().y();
-  */
-
   // node up
-  box_t up = {{n_min_x, y_split}, {n_max_x, n_max_y}};
-  s.nodes.push_back({ up });
-  node->up = &s.nodes.back();
+  if (!can_grow_up(node)) {
+    // leave creating the up node to the grow_up function
+    box_t up = {{n_min_x, y_split}, {n_max_x, n_max_y}};
+    s.nodes.push_back({ up });
+    node->up = &s.nodes.back();
+  }
 
   // node right
   box_t right = {{x_split, n_min_y}, {n_max_x, y_split}};
@@ -541,6 +547,27 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
   node->right = &s.nodes.back();
 
   return true;
+}
+
+node_t* grow_up(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
+  auto bin_limit = s.bin.max_corner();
+  if (root->box.max_corner().y() >= bin_limit.y())
+    return nullptr;
+
+  s.nodes.push_back({
+    {{0,
+      s.union_box.max_corner().y()},
+     {bin_limit.x(),
+      std::min(bin_limit.y(),
+               s.union_box.max_corner().y()+dims(item->bbox()).h)}
+    }});
+  node_t* up = &s.nodes.back();
+  root->up = up;
+
+  if (node_t* node = find_node(s, up, item, ++rec_depth))
+    return node;
+  else
+    return nullptr;
 }
 
 node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
@@ -555,6 +582,9 @@ node_t* find_node(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
         return node;
     if (up)
       if (node_t* node = find_node(s, up, item, ++rec_depth))
+        return node;
+    if (can_grow_up(root))
+      if (node_t* node = grow_up(s, root, item, rec_depth))
         return node;
     return nullptr;
   }
