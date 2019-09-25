@@ -36,7 +36,6 @@ namespace {
     if (brack_level>0)
       return std::optional<std::string>();
 
-    std::cerr << ps.str() << std::endl;
     return ps.str();
   }
 }

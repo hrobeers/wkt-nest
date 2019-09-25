@@ -24,7 +24,6 @@ namespace wktnest
       case 'x':
         in.get();
         in >> multiplier;
-        std::cerr << "multiplier: " << multiplier << std::endl;
         return multiplier;
       default:
         return 1;
