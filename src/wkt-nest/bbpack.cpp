@@ -362,48 +362,6 @@ namespace {
     return find_free_space(s, item, f_perc_value, f_transform, bracket);
   }
 
-  // TODO combine with find_free_space?
-  bool expand(state_t& s, box_t& box,
-              const std::function<crd_t(double)>& f_perc_value,
-              const std::function<void(box_t&, crd_t)>& f_transform) {
-    auto f_collision = [&](double perc) -> double {
-                         if (perc==0) return 1;
-                         crd_t v = f_perc_value(perc);
-                         f_transform(box, v);
-                         return can_claim_space(box, s)? -1*perc : 1*perc;
-                       };
-
-    std::pair<double, double> range = {0,1};
-
-    boost::uintmax_t max_it = MAX_IT;
-    std::pair<double,double> perc_move = bm::tools::bisect(f_collision, range.first, range.second, stop_condition, max_it, ignore_eval_err());
-
-    if (perc_move.first<0 || perc_move.second<0) {
-      // reset to start point
-      f_transform(box, f_perc_value(1));
-      return false;
-    }
-
-    double free_perc = f_collision(perc_move.first)<0? perc_move.first : perc_move.second;
-    f_transform(box, f_perc_value(free_perc));
-    return free_perc<1;
-  }
-  template<size_t DIRECTION>
-  bool expand(state_t& s, box_t& box) {
-    assert(false);
-    return false;
-  }
-  template<>
-  bool expand<DOWN>(state_t& s, box_t& box) {
-    point_t start_pnt = box.min_corner();
-
-    auto f_perc_value = [&start_pnt](double p) -> crd_t {return p*start_pnt.y();};
-    auto f_transform = [&start_pnt](box_t& b, crd_t v) {
-                         b = {{b.min_corner().x(), v}, b.max_corner()};
-                       };
-    return expand(s, box, f_perc_value, f_transform);
-  }
-
   inline
   bool can_grow_up(node_t* node) {
     if (node->up && node->up->used)
@@ -540,12 +498,6 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
 
   // node right
   box_t right = {{x_split, n_min_y}, {n_max_x, y_split}};
-  /*
-   * TODO Expansion still needed?
-  if (s.sorting == SORTING::HEIGHT)
-    // Expanding nodes down only improves when sorted by height
-    expand<DOWN>(s, right);
-  */
   s.nodes.push_back({ right });
   node->right = &s.nodes.back();
 
