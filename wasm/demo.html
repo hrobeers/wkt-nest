@@ -18,7 +18,11 @@
   <button onclick="run_nest(make_input(read_cnts()))">Nest them</button>
   <button onclick="run_animation(read_cnts())">Animate</button>
 
-<div id="output-container">
+  <br/>
+  <p id="log1"></p>
+  <p id="log2"></p>
+
+  <div id="output-container">
 </div>
 
 <script>
@@ -60,6 +64,21 @@
    input += cnts[2]? cnts[2] : 0;
    return input;
  }
+
+ (function(){
+   let old_warn = console.warn;
+   console.warn = (message) => {
+     switch (message.split(' ')[0]) {
+       case "bbox":
+         document.getElementById("log1").innerHTML = message;
+         break;
+       case "bin":
+         document.getElementById("log2").innerHTML = message;
+         break;
+     }
+     old_warn(message);
+   };
+ })();
 </script>
 
 <script type="module">
@@ -72,6 +91,9 @@
  function run_nest(input) {
    let c = document.getElementById("output-container");
    if (!c) return;
+
+   document.getElementById("log1").innerHTML = "";
+   document.getElementById("log2").innerHTML = "";
 
    let t0 = performance.now();
    let svg = window.nest(input);

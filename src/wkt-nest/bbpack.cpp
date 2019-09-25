@@ -1,6 +1,7 @@
 #include "wkt-nest/bbpack.hpp"
 #include "wkt-nest/bbpack-geometry.hpp"
 
+#include <iostream>
 #include <algorithm>
 #include <boost/math/special_functions/pow.hpp>
 #include <boost/geometry/algorithms/envelope.hpp>
@@ -433,6 +434,14 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
                            rp,
                            t};
                  });
+
+  // Output the nesting efficiency
+  flt_t total_footprint = 0;
+  for (item_t& item : s.items)
+    if (item.placed())
+      total_footprint += item.footprint();
+  std::cerr << "bbox footprint: " << total_footprint/area(s.union_box) * 100 << "%" << std::endl;
+  std::cerr << "bin footprint:  " << total_footprint/area(s.bin) * 100 << "%" << std::endl;
 
   return result;
 }
