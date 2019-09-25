@@ -9,6 +9,9 @@ using namespace bbpack::geometry;
 flt_t bbpack::geometry::area(const box_t& b) {
   return bg::area(b);
 }
+flt_t bbpack::geometry::area(const polygon_t& b) {
+  return bg::area(b);
+}
 
 void bbpack::geometry::centroid(const box_t& b, point_t& c) {
   return bg::centroid(b, c);

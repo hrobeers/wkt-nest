@@ -108,6 +108,9 @@ int main(int argc, char *argv[])
     case 'h':
       opts.sorting = SORTING::HEIGHT;
       break;
+    case 'a':
+      opts.sorting = SORTING::AREA;
+      break;
     case 's':
       opts.sorting = SORTING::SHUFFLE;
       break;

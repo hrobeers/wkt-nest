@@ -104,6 +104,8 @@ namespace {
     box_t _bbox;
     matrix_t _transform;
 
+    flt_t _footprint;
+
   public:
     int rand;
 
@@ -123,6 +125,7 @@ namespace {
       init_transform(identity_matrix);
       // random number for shuffling
       rand = std::rand();
+      _footprint = area(_buffered);
     }
 
   private:
@@ -130,7 +133,8 @@ namespace {
       _placed(false),
       _init_transform(identity_matrix),
       _transform(identity_matrix),
-      _source(other._source), _buffered(other._buffered)
+      _source(other._source), _buffered(other._buffered),
+      _footprint(other._footprint)
       {
         // initial transform = optimal rotation and move to origin
         init_transform(identity_matrix);
@@ -147,6 +151,7 @@ namespace {
     const matrix_t* transform() const { return &_transform; }
     void placed(bool p) { _placed = p; }
     bool placed() const { return _placed; }
+    flt_t footprint() const { return _footprint; }
 
     /*
      * Transformation is typically done L = T * R * S
@@ -384,6 +389,13 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
   case SORTING::HEIGHT:
     s.items.sort([](const item_t& i1, const item_t& i2){
                    return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
+                 });
+    break;
+  case SORTING::AREA:
+    s.items.sort([](const item_t& i1, const item_t& i2){
+                   if (i1.footprint() == i2.footprint())
+                     return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
+                   return i1.footprint() > i2.footprint();
                  });
     break;
   case SORTING::SHUFFLE:

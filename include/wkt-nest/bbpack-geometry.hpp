@@ -24,6 +24,7 @@ namespace bbpack { namespace geometry {
     };
 
     flt_t area(const box_t& b);
+    flt_t area(const polygon_t& b);
 
     void centroid(const box_t& b, point_t& c);
     void centroid(const polygon_t& b, point_t& c);
