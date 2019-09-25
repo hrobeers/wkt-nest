@@ -513,9 +513,9 @@ node_t* grow_up(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
 
   crd_t item_height = dims(item->bbox()).h;
   crd_t bot = s.union_box.max_corner().y();
-  crd_t top = bot + item_height;
+  crd_t top = std::min(bot + item_height, bin_limit.y());
 
-  if (top > bin_limit.y()) {
+  if (s.compact && top >= bin_limit.y()) {
     // The top node should be fully inside the bin
     // to ensure that a valid search is performed
     top = bin_limit.y();
