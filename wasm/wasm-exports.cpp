@@ -16,11 +16,25 @@ using namespace wktnest;
 const size_t r_size = 1048576; // 1MiB
 char result[r_size];
 
-extern "C" char* EMSCRIPTEN_KEEPALIVE nest(const char* p)
+extern "C" char* EMSCRIPTEN_KEEPALIVE nest(const char* p, const char* sorting)
 {
   try {
     nesting_opts opts;
-    opts.sorting = SORTING::HEIGHT;
+    switch (sorting[0]) {
+    case 'n':
+      opts.sorting = SORTING::NONE;
+      break;
+    default:
+    case 'h':
+      opts.sorting = SORTING::HEIGHT;
+      break;
+    case 'a':
+      opts.sorting = SORTING::AREA;
+      break;
+    case 's':
+      opts.sorting = SORTING::SHUFFLE;
+      break;
+    }
 
     bio::stream_buffer<bio::array_source> sbuf(p, strlen(p));
     std::istream in(&sbuf);

@@ -96,7 +96,6 @@ namespace {
   };
 
   class item_t {
-    bool _placed;
     const wktnest::polygon_t* _source;
     polygon_t _buffered;
     matrix_t _init_transform;
@@ -106,6 +105,7 @@ namespace {
     matrix_t _transform;
 
     flt_t _footprint;
+    point_t _centroid;
 
   public:
     int rand;
@@ -116,7 +116,6 @@ namespace {
     void operator=(item_t const &x) = delete;
 
     item_t(const wktnest::polygon_t* p, flt_t buffer_distance) :
-      _placed(false),
       _init_transform(identity_matrix),
       _transform(identity_matrix),
       _source(p)
@@ -131,7 +130,6 @@ namespace {
 
   private:
     item_t(const item_t& other) :
-      _placed(false),
       _init_transform(identity_matrix),
       _transform(identity_matrix),
       _source(other._source), _buffered(other._buffered),
@@ -150,9 +148,8 @@ namespace {
     const box_t* bbox() const { return &_bbox; }
     const matrix_t* init_transform() const { return &_init_transform; }
     const matrix_t* transform() const { return &_transform; }
-    void placed(bool p) { _placed = p; }
-    bool placed() const { return _placed; }
     flt_t footprint() const { return _footprint; }
+    point_t centroid() const { return _centroid; }
 
     /*
      * Transformation is typically done L = T * R * S
@@ -174,30 +171,68 @@ namespace {
       absolute_transform(t);
       _init_transform = prod(translation(-_bbox.min_corner().x(), -_bbox.min_corner().y()), _transform);
       absolute_transform(identity_matrix);
+      ::centroid(_polygon, _centroid);
     }
   };
 
   struct state_t {
     box_t bin;
-    double buffer_distance;
+    flt_t buffer_distance;
     SORTING sorting;
     bool compact;
-    std::list<item_t> items;
-    std::map<const wktnest::polygon_t*, item_t*> fits;
-    std::map<const item_t*, size_t> item_to_bin_idx;
-    box_t union_box;
+    bool centroid_left = true;
 
-    // TODO below still needed?
-
-    // list of nodes per bin
-    //std::vector<std::list<node_t>> nodes;
-    // single bin of nodes TODO switch to multiple bins?
     // or better chain calls to wkt-nest?
     // Nodes should be stored in list since vector will reallocate on resizing
     std::list<node_t> nodes;
+
+  private:
+    box_t _union_box = {{0,0},{0,0}};
+    polygon_t _union_poly;
+    std::list<item_t> _items;
+    std::map<const wktnest::polygon_t*, std::vector<item_t*>> items_for;
+    std::map<const item_t*, size_t> item_to_bin_idx;
+  public:
+    state_t (box_t bin, flt_t buffer_distance, SORTING sorting, bool compact)
+      : bin(bin), buffer_distance(buffer_distance), sorting(sorting), compact(compact) {}
+
+    std::list<item_t>& items() { return _items; }
+    const std::list<item_t>& items() const { return _items; }
+    void add_item(item_t&& item) {
+      _items.push_back(std::move(item));
+      item_t* i = &_items.back();
+      std::vector<item_t*>& mutations = items_for[i->source()];
+      mutations.push_back(i);
+      item_to_bin_idx[i] = 0;
+    }
+    void place(const item_t& item) {
+      item_to_bin_idx[&item] = 1;
+      _union_box = union_(_union_box, *item.bbox());
+      _union_poly = union_(_union_poly, convert(*item.bbox()));
+    };
+    const std::vector<item_t*>& mutations(const wktnest::polygon_t* source) const {
+      return items_for.at(source);
+    }
+    const std::vector<item_t*>& mutations(const item_t& item) const {
+      return items_for.at(item.source());
+    }
+    bool placed (const item_t& item) const {
+      return item_to_bin_idx.at(&item) > 0;
+    }
+    item_t* placed (const wktnest::polygon_t* source) const {
+      const std::vector<item_t*>& its = mutations(source);
+      auto it = std::find_if(its.cbegin(), its.cend(), [this](const item_t* i){ return placed(*i); });
+      if (it == its.end())
+        return nullptr;
+      return *it;
+    }
+
+    box_t& union_box() { return _union_box; }
+    polygon_t& union_poly() { return _union_poly; }
   };
 
-  const std::vector<double> rotations = {M_PI/2};
+  const std::vector<double> rotations = {M_PI, M_PI/2, M_PI/4, M_PI*3/4, M_PI/2+M_PI, M_PI/4+M_PI, M_PI*3/4+M_PI};
+  //const std::vector<double> rotations = {M_PI, M_PI/2, M_PI/2+M_PI};
   void create_items(state_t& s, const wktnest::polygon_t& p) {
     item_t i(&p, s.buffer_distance);
     auto f_area = [&](double angle) {
@@ -207,41 +242,12 @@ namespace {
     boost::uintmax_t max_iter = MAX_IT;
     auto min = bm::tools::brent_find_minima(f_area, M_PI/8, M_PI*3/8, 4, max_iter);
     i.init_transform(rotation(min.first));
-    s.items.push_back(std::move(i));
+    s.add_item(std::move(i));
 
     for (double r : rotations) {
       item_t ir(&p, s.buffer_distance);
       ir.init_transform(rotation(min.first+r));
-      s.items.push_back(std::move(ir));
-    }
-  }
-  void add_flips(std::list<item_t>& items) {
-    bool opp_centr = true;
-    point_t cb, cp;
-
-    auto it=items.begin();
-    while (it!=items.end()) {
-      // Alternate opp_centr insertion (known to work well for fins)
-
-      const box_t* bbox = it->bbox();
-      const polygon_t* polygon = it->polygon();
-      centroid(*bbox, cb);
-      centroid(*polygon, cp);
-      bool insert_before = cp.x()<cb.x();
-      if (opp_centr) insert_before = !insert_before;
-
-      item_t flip = it->clone();
-      flip.init_transform(prod(rotation(M_PI), *it->init_transform()));
-
-      if (insert_before) {
-        items.insert(it, std::move(flip));
-        it++;
-      }
-      else {
-        it++;
-        items.insert(it, std::move(flip));
-      }
-      opp_centr = !opp_centr;
+      s.add_item(std::move(ir));
     }
   }
 
@@ -280,8 +286,8 @@ namespace {
   template<typename Geometry>
   bool can_claim_space(const Geometry& item, const state_t& s) {
     // Check for collision with other items
-    for (const item_t& i : s.items) {
-      if (!i.placed())
+    for (const item_t& i : s.items()) {
+      if (!s.placed(i))
         continue;
       if (collide(item, i))
         return false;
@@ -364,7 +370,7 @@ namespace {
     point_t start_pnt = item->bbox()->min_corner();
 
     auto f_perc_value = [&start_pnt](double p) -> crd_t {return start_pnt.y()-(p*start_pnt.y());};
-    auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x()+(v/2),start_pnt.y()-v);};
+    auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x()+v,start_pnt.y()-v);};
     return find_free_space(s, item, f_perc_value, f_transform, bracket);
   }
 
@@ -388,43 +394,40 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
 
   switch (s.sorting) {
   case SORTING::HEIGHT:
-    s.items.sort([](const item_t& i1, const item_t& i2){
+    s.items().sort([](const item_t& i1, const item_t& i2){
                    return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
                  });
     break;
   case SORTING::AREA:
-    s.items.sort([](const item_t& i1, const item_t& i2){
+    s.items().sort([](const item_t& i1, const item_t& i2){
                    if (i1.footprint() == i2.footprint())
                      return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
                    return i1.footprint() > i2.footprint();
                  });
     break;
   case SORTING::SHUFFLE:
-    s.items.sort([](const item_t& i1, const item_t& i2){
+    s.items().sort([](const item_t& i1, const item_t& i2){
                    return i1.rand < i2.rand;
                  });
   }
 
-  add_flips(s.items);
-
   // construct root
-  auto id = dims(s.items.front().bbox());
+  auto id = dims(s.items().front().bbox());
   s.nodes.push_back({ {{0,0},{s.bin.max_corner().x(),id.h}} });
   node_t* root = &s.nodes.back();
 
-  for (item_t& item : s.items)
-    if (!s.fits[item.source()])
-      if (auto node = find_node(s, root, &item)) // TODO else pack in other bin
-        s.fits[item.source()] = &item;
+  for (item_t& item : s.items())
+    if (!s.placed(item.source()))
+      find_node(s, root, &item);
 
   // Create the result vector
   std::vector<placement> result;
   result.resize(polygons.size());
   std::transform(polygons.cbegin(), polygons.cend(), result.begin(),
                  [&s](const polygon_t& p) -> placement {
-                   if (!s.fits[&p])
+                   if (!s.placed(&p))
                      return {0};
-                   item_t* item = s.fits[&p];
+                   item_t* item = s.placed(&p);
                    auto t = item->transform()->matrix();
                    t.a[0][2] /= S<crd_t>::value;
                    t.a[1][2] /= S<crd_t>::value;
@@ -437,11 +440,11 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
 
   // Output the nesting efficiency
   flt_t total_footprint = 0;
-  for (item_t& item : s.items)
-    if (item.placed())
-      total_footprint += item.footprint();
-  std::cerr << "bbox footprint: " << total_footprint/area(s.union_box) * 100 << "%" << std::endl;
-  std::cerr << "bin footprint:  " << total_footprint/area(s.bin) * 100 << "%" << std::endl;
+  for (const polygon_t& p : polygons)
+    if (item_t* item = s.placed(&p))
+      total_footprint += item->footprint();
+  std::cerr << "box footprint: " << total_footprint/(dims(&s.bin).w * dims(&s.union_box()).h) * 100 << "%" << std::endl;
+  std::cerr << "bin footprint: " << total_footprint/area(s.bin) * 100 << "%" << std::endl;
 
   return result;
 }
@@ -465,16 +468,44 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
         return true;
     }
 
-    // Find free space
-    // First push left & down using bracketing
-    find_free_space<LEFT>(s, item, true);
-    find_free_space<DOWN>(s, item, true);
-    // Then iterate zigzag (LEFT & DOWN|RIGHT)
-    for (size_t i=0; i<MAX_IT; i++) {
-      bool left = find_free_space<LEFT>(s, item);
-      bool down = find_free_space<DOWN|RIGHT>(s, item);
-      if (!left && !down)
-        break;
+    auto mutations = s.mutations(*item);
+    std::sort(mutations.begin(), mutations.end(), [&s](const item_t* i1, const item_t* i2){
+                                                    if (i1->bbox()->max_corner().y() > i2->bbox()->max_corner().y()*1.1)
+                                                      return true;
+                                                    if (i2->bbox()->max_corner().y() > i1->bbox()->max_corner().y()*1.1)
+                                                      return false;
+                                                    // alternating centroid sorting
+                                                    bool right = i1->centroid().x() > i2->centroid().x();
+                                                    return s.centroid_left != right;
+                                                  });
+    s.centroid_left = !s.centroid_left;
+    //flt_t prev_dist = std::numeric_limits<flt_t>::max();
+    flt_t prev_area = std::numeric_limits<flt_t>::max();
+    flt_t ref_area = area(s.union_poly());
+    for (item_t* mut : mutations) {
+      mut->absolute_transform(translation(n_min_x, n_min_y));
+      // Find free space
+      // First push left & down using bracketing
+      find_free_space<LEFT>(s, mut, true);
+      find_free_space<DOWN>(s, mut, true);
+      // Then iterate zigzag (LEFT & DOWN|RIGHT)
+      for (size_t i=0; i<MAX_IT; i++) {
+        bool left = find_free_space<LEFT>(s, mut);
+        bool down = find_free_space<DOWN|RIGHT>(s, mut);
+        if (!left && !down)
+          break;
+      }
+      if (!can_claim_space(*mut,s))
+        // Bail out when we failed to find free space
+        continue;
+
+      //flt_t new_dist = bm::pow<2>(mut->bbox()->min_corner().x()) + bm::pow<2>(mut->bbox()->min_corner().y());
+      flt_t new_area = union_area(s.union_poly(), *mut->polygon())-ref_area;
+      if (new_area<prev_area*0.75) {
+        //prev_dist = new_dist;
+        prev_area = new_area;
+        item = mut;
+      }
     }
 
     if (!can_claim_space(*item,s))
@@ -483,8 +514,7 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
   }
 
   node->used = true;
-  item->placed(true);
-  s.union_box = union_(s.union_box, *item->bbox());
+  s.place(*item);
 
   /*
   // if bbox outside node, free up full node
@@ -533,7 +563,7 @@ node_t* grow_up(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
     return nullptr;
 
   crd_t item_height = dims(item->bbox()).h;
-  crd_t bot = s.union_box.max_corner().y();
+  crd_t bot = s.union_box().max_corner().y();
   crd_t top = std::min(bot + item_height, bin_limit.y());
 
   if (s.compact && top >= bin_limit.y()) {

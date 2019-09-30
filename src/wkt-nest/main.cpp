@@ -105,6 +105,7 @@ int main(int argc, char *argv[])
     case 'n':
       opts.sorting = SORTING::NONE;
       break;
+    default:
     case 'h':
       opts.sorting = SORTING::HEIGHT;
       break;

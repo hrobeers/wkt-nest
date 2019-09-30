@@ -69,7 +69,7 @@
    let old_warn = console.warn;
    console.warn = (message) => {
      switch (message.split(' ')[0]) {
-       case "bbox":
+       case "box":
          document.getElementById("log1").innerHTML = message;
          break;
        case "bin":
@@ -85,7 +85,7 @@
  import Module from './wkt-nest-exports.js';
 
  Module.onRuntimeInitialized = () => {
-   window.nest = Module.cwrap("nest", "string", ["string"]);
+   window.nest = Module.cwrap("nest", "string", ["string", "string"]);
  }
 
  function run_nest(input) {
@@ -96,7 +96,7 @@
    document.getElementById("log2").innerHTML = "";
 
    let t0 = performance.now();
-   let svg = window.nest(input);
+   let svg = window.nest(input, "area");
    let t1 = performance.now();
    console.log("Call to nest took " + (t1-t0) + "ms");
 
