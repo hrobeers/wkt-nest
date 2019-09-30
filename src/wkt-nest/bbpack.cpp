@@ -443,8 +443,9 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
   for (const polygon_t& p : polygons)
     if (item_t* item = s.placed(&p))
       total_footprint += item->footprint();
-  std::cerr << "box footprint: " << total_footprint/(dims(&s.bin).w * dims(&s.union_box()).h) * 100 << "%" << std::endl;
-  std::cerr << "bin footprint: " << total_footprint/area(s.bin) * 100 << "%" << std::endl;
+  std::cerr << "union footprint: " << total_footprint/area(s.union_box()) * 100 << "%" << std::endl;
+  std::cerr << "box footprint:   " << total_footprint/(dims(&s.bin).w * dims(&s.union_box()).h) * 100 << "%" << std::endl;
+  std::cerr << "bin footprint:   " << total_footprint/area(s.bin) * 100 << "%" << std::endl;
 
   return result;
 }
