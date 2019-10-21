@@ -186,24 +186,41 @@ namespace {
     // Nodes should be stored in list since vector will reallocate on resizing
     std::list<node_t> nodes;
 
+    //const std::vector<double> rotations = {M_PI, M_PI/2, M_PI/4, M_PI*3/4, M_PI/2+M_PI, M_PI/4+M_PI, M_PI*3/4+M_PI};
+    const std::vector<double> rotations = {M_PI, M_PI/2, M_PI/2+M_PI};
+    //const std::vector<double> rotations = {M_PI};
+
   private:
     box_t _union_box = {{0,0},{0,0}};
     polygon_t _union_poly;
-    std::list<item_t> _items;
+    std::list<item_t> _item_cont;
+    std::list<item_t*> _source_items;
     std::map<const wktnest::polygon_t*, std::vector<item_t*>> items_for;
     std::map<const item_t*, size_t> item_to_bin_idx;
   public:
     state_t (box_t bin, flt_t buffer_distance, SORTING sorting, bool compact)
       : bin(bin), buffer_distance(buffer_distance), sorting(sorting), compact(compact) {}
 
-    std::list<item_t>& items() { return _items; }
-    const std::list<item_t>& items() const { return _items; }
+    const std::list<item_t>& all_items() const { return _item_cont; }
+    std::list<item_t*>& items() { return _source_items; }
+    const std::list<item_t*>& items() const { return _source_items; }
     void add_item(item_t&& item) {
-      _items.push_back(std::move(item));
-      item_t* i = &_items.back();
+      _item_cont.push_back(std::move(item));
+      item_t* i = &_item_cont.back();
+      _source_items.push_back(i);
+
       std::vector<item_t*>& mutations = items_for[i->source()];
       mutations.push_back(i);
       item_to_bin_idx[i] = 0;
+
+      matrix_t itm = i->transform()->matrix();
+      for (double r : rotations) {
+        item_t ir(i->source(), buffer_distance);
+        ir.init_transform(matrix_t(itm.matrix() * rotation(r).matrix()));
+        _item_cont.push_back(std::move(ir));
+        item_to_bin_idx[&_item_cont.back()] = 0;
+        mutations.push_back(&_item_cont.back());
+      }
     }
     void place(const item_t& item) {
       item_to_bin_idx[&item] = 1;
@@ -231,24 +248,16 @@ namespace {
     polygon_t& union_poly() { return _union_poly; }
   };
 
-  const std::vector<double> rotations = {M_PI, M_PI/2, M_PI/4, M_PI*3/4, M_PI/2+M_PI, M_PI/4+M_PI, M_PI*3/4+M_PI};
-  //const std::vector<double> rotations = {M_PI, M_PI/2, M_PI/2+M_PI};
   void create_items(state_t& s, const wktnest::polygon_t& p) {
     item_t i(&p, s.buffer_distance);
     auto f_area = [&](double angle) {
                     i.absolute_transform(rotation(angle));
-                    return area(*i.bbox());
+                    return dims(i.bbox()).w; // minimal width = maximal height
                   };
     boost::uintmax_t max_iter = MAX_IT;
-    auto min = bm::tools::brent_find_minima(f_area, M_PI/8, M_PI*3/8, 4, max_iter);
+    auto min = bm::tools::brent_find_minima(f_area, M_PI/8, M_PI*7/8, 4, max_iter);
     i.init_transform(rotation(min.first));
     s.add_item(std::move(i));
-
-    for (double r : rotations) {
-      item_t ir(&p, s.buffer_distance);
-      ir.init_transform(rotation(min.first+r));
-      s.add_item(std::move(ir));
-    }
   }
 
   template<typename Geometry1, typename Geometry2>
@@ -286,7 +295,8 @@ namespace {
   template<typename Geometry>
   bool can_claim_space(const Geometry& item, const state_t& s) {
     // Check for collision with other items
-    for (const item_t& i : s.items()) {
+    // TODO get placed items from state?
+    for (const item_t& i : s.all_items()) {
       if (!s.placed(i))
         continue;
       if (collide(item, i))
@@ -305,9 +315,11 @@ namespace {
                   FALLING = LEFT | DOWN,
                   RISING  = RIGHT | UP,
   };
-  std::pair<double, double> bracket_solution(const std::function<double(double)>& f_collision) {
-    std::pair<double,double> bracket = {0,1};
-    for (double d=0.0001; d<1; d=d+0.1) {
+  std::pair<double, double> bracket_solution(const std::function<double(double)>& f_collision,
+                                             std::pair<double,double> bracket = {0,1}) {
+    double min = bracket.first;
+    double max = bracket.second;
+    for (double d=min; d<max; d=d+0.01) {
       if (std::signbit(f_collision(d))) {
         bracket.second = d;
         break;
@@ -370,7 +382,7 @@ namespace {
     point_t start_pnt = item->bbox()->min_corner();
 
     auto f_perc_value = [&start_pnt](double p) -> crd_t {return start_pnt.y()-(p*start_pnt.y());};
-    auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x()+v,start_pnt.y()-v);};
+    auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x()+(v*2),start_pnt.y()-v);};
     return find_free_space(s, item, f_perc_value, f_transform, bracket);
   }
 
@@ -394,31 +406,31 @@ fit_result wktnest::bbpack::fit(const wktnest::box_t& bin, const std::vector<wkt
 
   switch (s.sorting) {
   case SORTING::HEIGHT:
-    s.items().sort([](const item_t& i1, const item_t& i2){
-                   return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
+    s.items().sort([](const item_t* i1, const item_t* i2){
+                   return i1->bbox()->max_corner().y() > i2->bbox()->max_corner().y();
                  });
     break;
   case SORTING::AREA:
-    s.items().sort([](const item_t& i1, const item_t& i2){
-                   if (i1.footprint() == i2.footprint())
-                     return i1.bbox()->max_corner().y() > i2.bbox()->max_corner().y();
-                   return i1.footprint() > i2.footprint();
+    s.items().sort([](const item_t* i1, const item_t* i2){
+                   if (i1->footprint() == i2->footprint())
+                     return i1->bbox()->max_corner().y() > i2->bbox()->max_corner().y();
+                   return i1->footprint() > i2->footprint();
                  });
     break;
   case SORTING::SHUFFLE:
-    s.items().sort([](const item_t& i1, const item_t& i2){
-                   return i1.rand < i2.rand;
+    s.items().sort([](const item_t* i1, const item_t* i2){
+                   return i1->rand < i2->rand;
                  });
   }
 
   // construct root
-  auto id = dims(s.items().front().bbox());
+  auto id = dims(s.items().front()->bbox());
   s.nodes.push_back({ {{0,0},{s.bin.max_corner().x(),id.h}} });
   node_t* root = &s.nodes.back();
 
-  for (item_t& item : s.items())
-    if (!s.placed(item.source()))
-      find_node(s, root, &item);
+  for (item_t* item : s.items())
+    if (!s.placed(item->source()))
+      find_node(s, root, item);
 
   // Create the result vector
   std::vector<placement> result;
@@ -471,20 +483,23 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
 
     auto mutations = s.mutations(*item);
     std::sort(mutations.begin(), mutations.end(), [&s](const item_t* i1, const item_t* i2){
-                                                    if (i1->bbox()->max_corner().y() > i2->bbox()->max_corner().y()*1.1)
+                                                    if (dims(i1->bbox()).h > dims(i2->bbox()).h*1.1)
                                                       return true;
-                                                    if (i2->bbox()->max_corner().y() > i1->bbox()->max_corner().y()*1.1)
+                                                    if (dims(i2->bbox()).h > dims(i1->bbox()).h*1.1)
                                                       return false;
                                                     // alternating centroid sorting
                                                     bool right = i1->centroid().x() > i2->centroid().x();
                                                     return s.centroid_left != right;
                                                   });
-    s.centroid_left = !s.centroid_left;
-    //flt_t prev_dist = std::numeric_limits<flt_t>::max();
+    crd_t prev_dist = std::numeric_limits<crd_t>::max();
     flt_t prev_area = std::numeric_limits<flt_t>::max();
     flt_t ref_area = area(s.union_poly());
+    item = mutations.front();
+    int max_mut = 2;
     for (item_t* mut : mutations) {
       mut->absolute_transform(translation(n_min_x, n_min_y));
+      if (mut->bbox()->max_corner().x() > n_max_x)
+        mut->relative_transform(translation(n_max_x-mut->bbox()->max_corner().x(),0));
       // Find free space
       // First push left & down using bracketing
       find_free_space<LEFT>(s, mut, true);
@@ -500,13 +515,18 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
         // Bail out when we failed to find free space
         continue;
 
-      //flt_t new_dist = bm::pow<2>(mut->bbox()->min_corner().x()) + bm::pow<2>(mut->bbox()->min_corner().y());
+      crd_t new_dist = bm::pow<2>(mut->bbox()->min_corner().x()) + bm::pow<2>(mut->bbox()->min_corner().y());
       flt_t new_area = union_area(s.union_poly(), *mut->polygon())-ref_area;
+      //if (new_dist<prev_dist*0.75) {
       if (new_area<prev_area*0.75) {
-        //prev_dist = new_dist;
+        prev_dist = new_dist;
         prev_area = new_area;
         item = mut;
       }
+
+      if (--max_mut < 0)
+        // Do not evaluate more fitting mutations than max_mut
+        break;
     }
 
     if (!can_claim_space(*item,s))
@@ -516,6 +536,7 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
 
   node->used = true;
   s.place(*item);
+  s.centroid_left = !s.centroid_left;
 
   /*
   // if bbox outside node, free up full node
@@ -533,12 +554,13 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
   /*
   crd_t x_split = std::max(n_min_x, std::min(std::ceil(item->bbox()->max_corner().x()), n_max_x));
   crd_t y_split = std::max(n_min_y, std::min(std::ceil(item->bbox()->max_corner().y()), n_max_y));
+  */
   crd_t x_split = std::max(n_min_x, std::min(item->bbox()->max_corner().x(), n_max_x));
   crd_t y_split = std::max(n_min_y, std::min(item->bbox()->max_corner().y(), n_max_y));
-  */
-
+  /*
   crd_t x_split = std::ceil(n_min_x + dims(item->bbox()).w);
   crd_t y_split = std::ceil(n_min_y + dims(item->bbox()).h);
+  */
 
   // node up
   if (!can_grow_up(node)) {
@@ -579,6 +601,7 @@ node_t* grow_up(state_t& s, node_t* root, item_t* item, size_t rec_depth) {
   node_t* up = &s.nodes.back();
   root->up = up;
 
+  s.centroid_left = true;
   if (node_t* node = find_node(s, up, item, ++rec_depth))
     return node;
   else
