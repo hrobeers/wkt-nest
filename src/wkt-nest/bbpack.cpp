@@ -186,8 +186,8 @@ namespace {
     // Nodes should be stored in list since vector will reallocate on resizing
     std::list<node_t> nodes;
 
-    //const std::vector<double> rotations = {M_PI, M_PI/2, M_PI/4, M_PI*3/4, M_PI/2+M_PI, M_PI/4+M_PI, M_PI*3/4+M_PI};
-    const std::vector<double> rotations = {M_PI, M_PI/2, M_PI/2+M_PI};
+    const std::vector<double> rotations = {M_PI, M_PI/2, M_PI/4, M_PI*3/4, M_PI/2+M_PI, M_PI/4+M_PI, M_PI*3/4+M_PI};
+    //const std::vector<double> rotations = {M_PI, M_PI/2, M_PI/2+M_PI};
     //const std::vector<double> rotations = {M_PI};
 
   private:
@@ -382,7 +382,7 @@ namespace {
     point_t start_pnt = item->bbox()->min_corner();
 
     auto f_perc_value = [&start_pnt](double p) -> crd_t {return start_pnt.y()-(p*start_pnt.y());};
-    auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x()+(v*2),start_pnt.y()-v);};
+    auto f_transform = [&start_pnt](crd_t v){return translation(start_pnt.x()+(v/2),start_pnt.y()-v);};
     return find_free_space(s, item, f_perc_value, f_transform, bracket);
   }
 
@@ -493,7 +493,7 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
                                                   });
     crd_t prev_dist = std::numeric_limits<crd_t>::max();
     flt_t prev_area = std::numeric_limits<flt_t>::max();
-    flt_t ref_area = area(s.union_poly());
+    //flt_t ref_area = area(s.union_poly());
     item = mutations.front();
     int max_mut = 2;
     for (item_t* mut : mutations) {
@@ -516,11 +516,11 @@ bool split_node(state_t& s, node_t* node, item_t* item, bool artificial = false)
         continue;
 
       crd_t new_dist = bm::pow<2>(mut->bbox()->min_corner().x()) + bm::pow<2>(mut->bbox()->min_corner().y());
-      flt_t new_area = union_area(s.union_poly(), *mut->polygon())-ref_area;
-      //if (new_dist<prev_dist*0.75) {
-      if (new_area<prev_area*0.75) {
+      //flt_t new_area = union_area(s.union_poly(), *mut->polygon())-ref_area;
+      if (new_dist<prev_dist*0.75) {
+      //if (new_area<prev_area*0.75) {
         prev_dist = new_dist;
-        prev_area = new_area;
+        //prev_area = new_area;
         item = mut;
       }
 
