@@ -213,7 +213,7 @@ namespace {
       mutations.push_back(i);
       item_to_bin_idx[i] = 0;
 
-      matrix_t itm = i->transform()->matrix();
+      matrix_t itm(i->transform()->matrix());
       for (double r : rotations) {
         item_t ir(i->source(), buffer_distance);
         ir.init_transform(matrix_t(itm.matrix() * rotation(r).matrix()));

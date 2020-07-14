@@ -2,21 +2,25 @@
 
 #include <sstream>
 #include <boost/geometry/io/wkt/read.hpp>
+#include <wkt-nest/bbpack-geometry.hpp>
 
 using namespace wktnest;
 
 namespace {
   const char* BOX = "BOX(";
   const char* POLYGON = "POLYGON(";
+  const char* MULTIPOLYGON = "MULTIPOLYGON(";
 
   std::optional<std::string> read_token(const char* token, std::istream &in) {
     char c;
     size_t i=0;
     // Read until token matched
-    while (token[i]!=0 && in.get(c)) {
-      if (c!=token[i++])
-        // reset i
-        i=0;
+    // Or bail out if char differs
+    while (token[i]!=0) {
+      c=in.peek();
+      if (!std::isspace(c) && c!=token[i++])
+        return std::optional<std::string>();
+      in.get(c);
     }
 
     std::stringstream ps(token);
@@ -50,6 +54,12 @@ std::optional<box_t> wktnest::read_box(std::istream &in) {
 }
 
 std::optional<polygon_t> wktnest::read_polygon(std::istream &in) {
+  if (auto s = read_token(MULTIPOLYGON, in)) {
+    multi_polygon_t mp;
+    boost::geometry::read_wkt(*s, mp);
+    // TODO more?
+    return bbpack::geometry::union_(mp[0],mp[1]);
+  }
   if (auto s = read_token(POLYGON, in)) {
     polygon_t p;
     boost::geometry::read_wkt(*s, p);

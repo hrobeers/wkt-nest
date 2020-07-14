@@ -11,8 +11,8 @@ namespace bbpack { namespace geometry {
 
     typedef wktnest::N flt_t;
 
-    typedef int_fast64_t crd_t;
-    //typedef flt_t crd_t;
+    //typedef int_fast64_t crd_t;
+    typedef flt_t crd_t;
 
     typedef boost::geometry::model::d2::point_xy<crd_t> point_t;
     typedef boost::geometry::model::polygon<point_t> polygon_t;
